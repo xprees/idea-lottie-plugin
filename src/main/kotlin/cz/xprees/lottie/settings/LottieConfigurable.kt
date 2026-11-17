@@ -48,6 +48,11 @@ class LottieConfigurable : BoundSearchableConfigurable(LottieBundle.message("set
                     )
                     .visibleIf(background.component.selectedValueIs(Background.CUSTOM))
             }
+            row(LottieBundle.message("settings.palette.highlight")) {
+                comboBox(LottieSettings.PaletteHighlight.entries, textListCellRenderer<LottieSettings.PaletteHighlight?> { it?.let { h -> LottieBundle.message("settings.palette.highlight.${h.name.lowercase()}") } })
+                    .bind({ it.selectedItem as? LottieSettings.PaletteHighlight ?: LottieSettings.PaletteHighlight.OUTLINE }, { c, v -> c.selectedItem = v }, state::paletteHighlight.toMutableProperty())
+                    .comment(LottieBundle.message("settings.palette.highlight.comment"))
+            }
             row {
                 checkBox(LottieBundle.message("settings.autoplay")).bindSelected(state::autoplay)
             }

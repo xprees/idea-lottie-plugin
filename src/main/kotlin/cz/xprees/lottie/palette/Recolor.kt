@@ -63,6 +63,34 @@ object Recolor {
         }
     }
 
+    /**
+     * A copy of [root] for showing where palette color [target] is used: its uses white, the uses of every other color of [palette]
+     * black (each keeping its alpha), and image layers hidden. Rendered, the white area is where the color shows on screen.
+     */
+    fun mask(root: Any?, palette: List<PaletteEntry>, target: PaletteEntry): Any? {
+        val copy = deepCopy(root)
+        for (entry in palette) {
+            val c = entry.color
+            val to = if (entry === target || entry.color.rgba == target.color.rgba) LottieColor(1.0, 1.0, 1.0, c.a, c.scale, c.hasAlpha)
+            else LottieColor(0.0, 0.0, 0.0, c.a, c.scale, c.hasAlpha)
+            apply(copy, edits(entry.usages, to))
+        }
+        fun hideImages(layers: Any?) {
+            layers.arr()?.forEach { layer ->
+                @Suppress("UNCHECKED_CAST")
+                val l = layer as? MutableMap<String, Any?> ?: return@forEach
+                if (l["ty"].num()?.toInt() == 2) {
+                    @Suppress("UNCHECKED_CAST")
+                    val ks = (l["ks"] as? MutableMap<String, Any?>) ?: LinkedHashMap<String, Any?>().also { l["ks"] = it }
+                    ks["o"] = linkedMapOf<String, Any?>("a" to 0L, "k" to 0L)
+                }
+            }
+        }
+        hideImages(copy.obj()?.get("layers"))
+        copy.obj()?.get("assets").arr()?.forEach { hideImages(it.obj()?.get("layers")) }
+        return copy
+    }
+
     // ---- themes ----------------------------------------------------------------------------------------------------------
 
     /** The kinds a theme can recolor: color properties, which can become slots. */

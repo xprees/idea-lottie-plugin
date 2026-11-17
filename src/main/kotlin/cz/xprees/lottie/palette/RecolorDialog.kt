@@ -79,7 +79,7 @@ class RecolorDialog(
         themeCombo.isEnabled = themeRadio.isSelected
         val skipped = entry.usages.count { !Recolor.themable(it) }
         skippedLabel.text = wrap(when {
-            themes != null && !themesSupported -> LottieBundle.message("recolor.theme.v1")
+            themes != null && !themesSupported -> LottieBundle.message("recolor.animation.comment")
             themeRadio.isSelected && skipped > 0 -> LottieBundle.message("recolor.theme.skipped", skipped)
             themeRadio.isSelected -> LottieBundle.message("recolor.theme.comment")
             else -> LottieBundle.message("recolor.animation.comment")
@@ -101,6 +101,13 @@ class RecolorDialog(
                     add(themeRadio)
                     add(themeCombo.apply { prototypeDisplayValue = "wwwwwwwwwwwwwwww" })
                 }.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+                if (!themesSupported) {
+                    // dotLottie 1.0 has no themes: say so where the option is, with what to do about it
+                    add(JBLabel(wrap(LottieBundle.message("recolor.theme.v1.warning")), com.intellij.icons.AllIcons.General.Warning, javax.swing.SwingConstants.LEFT).apply {
+                        border = JBUI.Borders.emptyTop(4)
+                        alignmentX = java.awt.Component.LEFT_ALIGNMENT
+                    })
+                }
                 add(skippedLabel.apply { border = JBUI.Borders.emptyTop(4); alignmentX = java.awt.Component.LEFT_ALIGNMENT })
             }, BorderLayout.SOUTH)
         } else {

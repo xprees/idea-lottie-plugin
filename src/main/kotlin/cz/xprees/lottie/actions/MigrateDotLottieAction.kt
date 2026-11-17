@@ -65,7 +65,7 @@ internal object DotLottieVersions {
 
     fun isV1(file: VirtualFile): Boolean = LottieFiles.isDotLottie(file) && version(file) == 1
 
-    private fun version(file: VirtualFile): Int? {
+    fun version(file: VirtualFile): Int? {
         val stamp = file.modificationStamp
         file.getUserData(KEY)?.takeIf { it.first == stamp }?.let { return it.second }
         val version = try {
@@ -75,6 +75,15 @@ internal object DotLottieVersions {
         }
         file.putUserData(KEY, stamp to version)
         return version
+    }
+}
+
+/** The dotLottie version after the name in a `.lottie` file's editor tab (`toggle.lottie · v2`). */
+class DotLottieTabTitleProvider : com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider {
+    override fun getEditorTabTitle(project: Project, file: VirtualFile): String? {
+        if (!LottieFiles.isDotLottie(file)) return null
+        val version = DotLottieVersions.version(file) ?: return null
+        return LottieBundle.message("tab.title.version", file.presentableName, version)
     }
 }
 

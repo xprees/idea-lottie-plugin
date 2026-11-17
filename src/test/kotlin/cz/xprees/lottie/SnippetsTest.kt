@@ -53,8 +53,8 @@ class SnippetsTest {
         val s = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_WEB, interactive)
         assertThat(s.first(SnippetKind.SETUP)!!.code).contains("src: '/toggle.lottie'", "stateMachineId: 'toggle'")
         assertThat(s.first(SnippetKind.PLAY_MARKER, "hit")!!.code).isEqualTo("dotLottie.setMarker('hit');\ndotLottie.play();")
-        // a single-frame marker still covers one frame
-        assertThat(s.first(SnippetKind.MARKER_EVENTS)!!.code).contains("{ name: 'intro', start: 0, end: 10 }", "{ name: 'hit', start: 15, end: 16 }", "case 'hit':")
+        // markers are played by name only: no frame numbers anywhere
+        assertThat(s.snippets.filter { it.kind == SnippetKind.PLAY_MARKER }.map { it.code }).noneMatch { it.contains("15") }
         assertThat(s.first(SnippetKind.INPUT, "clicks")!!.code).isEqualTo("dotLottie.stateMachineSetNumericInput('clicks', 3);")
         assertThat(s.first(SnippetKind.CUSTOM_EVENTS)!!.code).contains("case 'switched-on':")
         assertThat(SnippetGenerator.generate(CodePlatform.DOTLOTTIE_WEB, json).first(SnippetKind.SETUP)!!.code).contains("src: '/anim/hand_loading.json'")
@@ -89,12 +89,35 @@ class SnippetsTest {
         val ios = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_IOS, interactive)
         assertThat(ios.first(SnippetKind.SETUP)!!.code).contains("fileName: \"toggle\"", "stateMachineId: \"toggle\"")
         assertThat(ios.first(SnippetKind.INPUT, "label")!!.code).isEqualTo("_ = animation.stateMachineSetStringInput(key: \"label\", value: \"hello\")")
-        assertThat(ios.first(SnippetKind.MARKER_EVENTS)!!.code).contains("case 15..<16: name = \"hit\"")
+        assertThat(ios.first(SnippetKind.PLAY_MARKER, "hit")!!.code).isEqualTo("animation.setMarker(marker: \"hit\")\nanimation.play()")
         assertThat(SnippetGenerator.generate(CodePlatform.LOTTIE_IOS, interactive).first(SnippetKind.SETUP)!!.code).contains("LottieAnimationView(dotLottieName: \"toggle\")")
         assertThat(SnippetGenerator.generate(CodePlatform.FLUTTER, json).first(SnippetKind.SETUP)!!.code)
             .contains("Lottie.asset(", "'web/public/anim/hand_loading.json'", "class HandLoadingAnimation extends StatefulWidget")
         assertThat(SnippetGenerator.generate(CodePlatform.REACT_NATIVE, json).first(SnippetKind.PLAY_MARKER, "intro")!!.code)
             .contains("animation.current?.play(0, 10);")
+    }
+
+    @Test
+    fun `dotLottie framework players get their own setup and instance access`() {
+        val vue = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_VUE, interactive)
+        assertThat(vue.first(SnippetKind.SETUP)!!.code).contains("<DotLottieVue ref=\"player\" src=\"/toggle.lottie\" autoplay loop state-machine-id=\"toggle\" />", "getDotLottieInstance()")
+        assertThat(vue.first(SnippetKind.PLAY_MARKER, "intro")!!.code).isEqualTo("dotLottie.setMarker('intro');\ndotLottie.play();")
+        val svelte = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_SVELTE, interactive)
+        assertThat(svelte.first(SnippetKind.SETUP)!!.code).contains("dotLottieRefCallback={(ref) => (dotLottie = ref)}", "stateMachineId=\"toggle\"")
+        assertThat(svelte.first(SnippetKind.INPUT, "isOn")!!.code).startsWith("dotLottie?.stateMachineSetBooleanInput")
+        val solid = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_SOLID, interactive)
+        assertThat(solid.first(SnippetKind.SETUP)!!.code).contains("createSignal(null)", "<DotLottieSolid")
+        assertThat(solid.first(SnippetKind.STATE_MACHINE)!!.code).isEqualTo("dotLottie()?.stateMachineLoad('toggle');\ndotLottie()?.stateMachineStart();")
+        val wc = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_WEB_COMPONENT, interactive)
+        assertThat(wc.first(SnippetKind.SETUP)!!.code).contains("<dotlottie-wc id=\"lottie\" src=\"/toggle.lottie\" autoplay loop statemachineid=\"toggle\">", ".dotLottie;")
+        val rn = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_REACT_NATIVE, interactive)
+        assertThat(rn.first(SnippetKind.SETUP)!!.code).contains("from '@lottiefiles/dotlottie-react-native'", "stateMachineId=\"toggle\"")
+        assertThat(rn.first(SnippetKind.INPUT, "reset")!!.code).isEqualTo("ref.current?.stateMachineFire('reset');")
+        assertThat(rn.first(SnippetKind.CUSTOM_EVENTS)!!.code).contains("onStateMachineCustomEvent={(message) => {", "switch (message)")
+        val flutter = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_FLUTTER, interactive)
+        assertThat(flutter.first(SnippetKind.SETUP)!!.code).contains("DotLottieView(", "source: 'app/src/main/assets/toggle.lottie'", "stateMachineId: 'toggle'")
+        assertThat(flutter.first(SnippetKind.INPUT, "clicks")!!.code).isEqualTo("_controller?.stateMachineSetNumericInput('clicks', 3.0);")
+        assertThat(flutter.first(SnippetKind.CUSTOM_EVENTS)!!.code).contains("stateMachineOnCustomEvent: (message) {", "case 'switched-on':")
     }
 
     @Test
@@ -142,6 +165,12 @@ class SnippetsTest {
         assertThat(detect("web/package.json" to """{"dependencies":{"react":"19"}}""", "android/app/build.gradle" to "implementation(\"com.airbnb.android:lottie:6.6.0\")").first())
             .isEqualTo(CodePlatform.LOTTIE_ANDROID)
         assertThat(detect("node_modules/x/package.json" to """{"dependencies":{"lottie-web":"5"}}""")).isEmpty()
+        assertThat(detect("package.json" to """{"dependencies":{"vue":"3","@lottiefiles/dotlottie-vue":"0.13"}}""").first()).isEqualTo(CodePlatform.DOTLOTTIE_VUE)
+        assertThat(detect("package.json" to """{"dependencies":{"svelte":"5"}}""").first()).isEqualTo(CodePlatform.DOTLOTTIE_SVELTE)
+        assertThat(detect("package.json" to """{"dependencies":{"solid-js":"1"}}""").first()).isEqualTo(CodePlatform.DOTLOTTIE_SOLID)
+        assertThat(detect("package.json" to """{"dependencies":{"@lottiefiles/dotlottie-wc":"0.12"}}""").first()).isEqualTo(CodePlatform.DOTLOTTIE_WEB_COMPONENT)
+        assertThat(detect("package.json" to """{"dependencies":{"react-native":"0.80"}}""").first()).isEqualTo(CodePlatform.DOTLOTTIE_REACT_NATIVE)
+        assertThat(detect("pubspec.yaml" to "dependencies:\n  dotlottie_flutter: ^0.3.0\n").first()).isEqualTo(CodePlatform.DOTLOTTIE_FLUTTER)
         assertThat(PlatformDetector.detect(mapOf("app/build.gradle" to "implementation 'com.lottiefiles:dotlottie-android:0.5.0'")).first().evidence).isEqualTo("app/build.gradle")
     }
 }

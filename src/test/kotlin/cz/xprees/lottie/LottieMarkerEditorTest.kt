@@ -62,6 +62,30 @@ class LottieMarkerEditorTest : BasePlatformTestCase() {
         assertThat(markers.map { Triple(it.name, it.start, it.duration) }).containsExactly(Triple("tap", 20.0, 5.0))
     }
 
+    fun `test dotLottie markers are edited in the archive, each edit undone by one undo`() {
+        val file = myFixture.tempDirFixture.createFile("interactive.lottie")
+        com.intellij.openapi.application.WriteAction.runAndWait<Exception> { file.setBinaryContent(TestData.bytes("interactive.lottie")) }
+        val preview = cz.xprees.lottie.preview.LottiePreviewFileEditor(project, file, null)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, preview)
+        fun archiveMarkers() = LottieModel.read(cz.xprees.lottie.dotlottie.DotLottieArchive.read(file.contentsToByteArray()).animationText("sample")!!)!!.markers
+        val before = archiveMarkers()
+        val e = cz.xprees.lottie.editor.DotLottieMarkerEditor(project, file) { "sample" }
+
+        e.add("tap", 12.0, 0.0)
+        assertThat(archiveMarkers().map { it.name }).contains("tap")
+        val index = archiveMarkers().indexOfFirst { it.name == "tap" }
+        e.rename(index, "press")
+        e.setRange(index, 14.0, 3.0)
+        assertThat(archiveMarkers()[index].let { Triple(it.name, it.start, it.duration) }).isEqualTo(Triple("press", 14.0, 3.0))
+
+        val undo = UndoManager.getInstance(project)
+        undo.undo(preview)
+        assertThat(archiveMarkers()[index].let { Triple(it.name, it.start, it.duration) }).isEqualTo(Triple("press", 12.0, 0.0))
+        undo.undo(preview)
+        undo.undo(preview)
+        assertThat(archiveMarkers()).isEqualTo(before)
+    }
+
     fun `test an edit is one undoable command`() {
         val e = editor()
         val before = text

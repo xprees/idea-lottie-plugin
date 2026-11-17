@@ -132,7 +132,6 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
     private fun title(snippet: Snippet): String = when (snippet.kind) {
         SnippetKind.SETUP -> LottieBundle.message("code.section.setup")
         SnippetKind.PLAY_MARKER -> LottieBundle.message("code.section.marker", snippet.subject.orEmpty())
-        SnippetKind.MARKER_EVENTS -> LottieBundle.message("code.section.marker.events")
         SnippetKind.STATE_MACHINE -> LottieBundle.message("code.section.state.machine", snippet.subject.orEmpty())
         SnippetKind.INPUT -> {
             val event = context?.inputs?.firstOrNull { it.name == snippet.subject }?.type == cz.xprees.lottie.statemachine.InputType.EVENT

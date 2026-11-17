@@ -41,6 +41,7 @@
 
         <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
         <editorNotificationProvider implementation="cz.xprees.lottie.actions.DotLottieV1NotificationProvider"/>
+        <editorTabTitleProvider implementation="cz.xprees.lottie.actions.DotLottieTabTitleProvider"/>
         <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
                                  instance="cz.xprees.lottie.settings.LottieConfigurable"
                                  key="settings.display.name" bundle="messages.LottieBundle"/>

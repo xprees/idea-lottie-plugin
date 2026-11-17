@@ -35,6 +35,8 @@ import javax.swing.ScrollPaneConstants
 internal class PaletteStrip(
     private val onNavigate: ((ColorUsage) -> Unit)?,
     private val onRecolor: ((PaletteEntry) -> Unit)? = null,
+    /** The swatch under the mouse (null when it leaves), for showing where the color is used. */
+    private val onHover: ((PaletteEntry?) -> Unit)? = null,
 ) : JPanel(BorderLayout()) {
 
     private val swatches = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(3))).apply { isOpaque = false }
@@ -75,6 +77,14 @@ internal class PaletteStrip(
                     if (e.isPopupTrigger || e.button != MouseEvent.BUTTON1) return
                     val recolor = onRecolor
                     if (e.isAltDown || recolor == null) navigateNext() else recolor(entry)
+                }
+
+                override fun mouseEntered(e: MouseEvent) {
+                    onHover?.invoke(entry)
+                }
+
+                override fun mouseExited(e: MouseEvent) {
+                    onHover?.invoke(null)
                 }
 
                 override fun mousePressed(e: MouseEvent) = popup(e)
