@@ -56,6 +56,12 @@ class StateMachinePanel(private val callbacks: Callbacks) : JPanel(BorderLayout(
         fun addInput()
         fun editInput(input: StateMachineInput)
         fun deleteInput(input: StateMachineInput)
+        /** Code that sets [input] to [value] on the Code tab's platform (a dotLottie runtime). */
+        fun inputCode(input: StateMachineInput, value: Any?): String
+        /** Code that listens to the machine's custom events on that platform. */
+        fun customEventsCode(): String
+        /** The name of that platform, for the copy buttons' tooltips. */
+        fun codePlatformName(): String
     }
 
     /** A running machine as the player reports it. */
@@ -100,7 +106,7 @@ class StateMachinePanel(private val callbacks: Callbacks) : JPanel(BorderLayout(
             add(Action(LottieBundle.message("sm.action.add.input"), AllIcons.General.Add, needsMachine = true) { callbacks.addInput() })
             add(Action(LottieBundle.message("sm.action.edit.json"), AllIcons.Actions.Edit, needsMachine = true) { callbacks.editJson() })
             add(Separator.getInstance())
-            add(Action(LottieBundle.message("sm.action.copy.listener"), AllIcons.Actions.Copy) { copy(Snippets.customEventListener()) })
+            add(Action(LottieBundle.message("sm.action.copy.listener"), AllIcons.Actions.Copy) { copy(callbacks.customEventsCode()) })
             add(Action(LottieBundle.message("sm.action.clear.log"), AllIcons.Actions.GC) { log.clear() })
         }
         val toolbar = ActionManager.getInstance().createActionToolbar("LottieStateMachine", actions, true).apply { targetComponent = this@StateMachinePanel }
@@ -264,7 +270,7 @@ class StateMachinePanel(private val callbacks: Callbacks) : JPanel(BorderLayout(
                 add(name, BorderLayout.CENTER)
                 add(JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
                     if (input.type.hasValue) add(InplaceButton(LottieBundle.message("sm.reset"), AllIcons.General.Reset) { callbacks.reset(input.name) })
-                    add(InplaceButton(LottieBundle.message("sm.copy.code"), AllIcons.Actions.Copy) { copy(Snippets.forInput(input, currentValue())) })
+                    add(InplaceButton(LottieBundle.message("sm.copy.code", callbacks.codePlatformName()), AllIcons.Actions.Copy) { copy(callbacks.inputCode(input, currentValue())) })
                     add(InplaceButton(LottieBundle.message("sm.edit.input"), AllIcons.Actions.Edit) { callbacks.editInput(input) })
                     add(InplaceButton(LottieBundle.message("sm.delete.input"), AllIcons.General.Remove) { callbacks.deleteInput(input) })
                 }, BorderLayout.EAST)
@@ -352,34 +358,5 @@ class StateMachinePanel(private val callbacks: Callbacks) : JPanel(BorderLayout(
             is Number -> value.toString()
             else -> value.toString()
         }
-    }
-}
-
-/** Code for driving a state machine from a web page with `@lottiefiles/dotlottie-web` (the player the preview runs). */
-object Snippets {
-    fun forInput(input: StateMachineInput, value: Any?): String = when (input.type) {
-        InputType.BOOLEAN -> "dotLottie.stateMachineSetBooleanInput(${js(input.name)}, ${value == true});"
-        InputType.NUMERIC -> "dotLottie.stateMachineSetNumericInput(${js(input.name)}, ${StateMachinePanel.format(value ?: 0)});"
-        InputType.STRING -> "dotLottie.stateMachineSetStringInput(${js(input.name)}, ${js(value?.toString() ?: "")});"
-        InputType.EVENT -> "dotLottie.stateMachineFireEvent(${js(input.name)});"
-    }
-
-    fun customEventListener(): String =
-        "dotLottie.addEventListener('stateMachineCustomEvent', (event) => {\n  console.log('State machine event:', event.eventName);\n});"
-
-    /** A single-quoted JavaScript string literal. */
-    internal fun js(text: String): String = buildString {
-        append('\'')
-        for (c in text) {
-            when (c) {
-                '\\' -> append("\\\\")
-                '\'' -> append("\\'")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> if (c < ' ' || c == '\u2028' || c == '\u2029') append("\\u%04x".format(c.code)) else append(c)
-            }
-        }
-        append('\'')
     }
 }

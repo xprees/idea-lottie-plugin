@@ -46,6 +46,23 @@ class StateMachine(val root: Map<String, Any?>) {
 
     fun input(name: String): StateMachineInput? = inputs.firstOrNull { it.name == name }
 
+    /** The names of the custom events the machine sends to the host app (`FireCustomEvent` actions anywhere), in file order. */
+    val customEvents: List<String>
+        get() {
+            val names = LinkedHashSet<String>()
+            fun walk(value: Any?) {
+                when (value) {
+                    is Map<*, *> -> {
+                        if (value["type"] == "FireCustomEvent") value["value"].str()?.takeIf { it.isNotEmpty() }?.let(names::add)
+                        value.values.forEach(::walk)
+                    }
+                    is List<*> -> value.forEach(::walk)
+                }
+            }
+            walk(root)
+            return names.toList()
+        }
+
     fun toJson(): String = MiniJson.write(root, pretty = true) + "\n"
 
     // ---- edits ----------------------------------------------------------------------------------------------------------

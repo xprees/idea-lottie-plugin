@@ -28,6 +28,10 @@
 - Inlay hints naming Lottie codes: layer and shape types, blend and matte modes, parent layers, in/out points and keyframe times in
   seconds, layer names in front of layer objects
 - The layer at the caret is outlined in the preview, and clicking the preview moves the caret to the layer under the mouse
+- A *Code* tab in the preview with ready-to-copy code for the open animation: load it, play each marker, react when playback
+  enters a marker, start the state machine, set each input and listen to its custom events. For dotLottie Web and React,
+  lottie-web, Lottie React Native, dotLottie Android (Compose, View), Lottie Android and Compose, dotLottie iOS, Lottie iOS and
+  Flutter; the platform is guessed from the project's build files and can be changed per project
 - A *State machine* tab for interactive dotLottie files: the running machine's state, its inputs with live values to set, reset or
   fire, and a log of transitions, input changes and custom events
 - State machine inputs are added, edited, renamed (with every reference) and deleted from the panel, as undoable edits of the archive

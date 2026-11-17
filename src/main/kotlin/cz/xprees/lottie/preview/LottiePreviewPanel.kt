@@ -21,6 +21,7 @@ import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbAwareToggleAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -63,6 +64,12 @@ import cz.xprees.lottie.palette.PaletteEntry
 import cz.xprees.lottie.palette.PaletteScanner
 import cz.xprees.lottie.settings.LottieSettings
 import cz.xprees.lottie.settings.LottieSettings.Background
+import cz.xprees.lottie.snippets.CodePlatform
+import cz.xprees.lottie.snippets.CodePlatforms
+import cz.xprees.lottie.snippets.CodeSnippetsPanel
+import cz.xprees.lottie.snippets.SnippetContext
+import cz.xprees.lottie.snippets.SnippetGenerator
+import cz.xprees.lottie.snippets.SnippetMarker
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -158,6 +165,8 @@ class LottiePreviewPanel(
         }
     private var paletteVisible = PropertiesComponent.getInstance().getBoolean(PALETTE_VISIBLE_KEY, true)
     private var detailsVisible = PropertiesComponent.getInstance().getBoolean(DETAILS_VISIBLE_KEY, true)
+    /** The Code tab of JSON files (their only side tab); `.lottie` files show it with the details. */
+    private var codeVisible = PropertiesComponent.getInstance().getBoolean(CODE_VISIBLE_KEY, false)
 
     private var playingBeforeScrub = false
 
@@ -220,6 +229,12 @@ class LottiePreviewPanel(
             val index = marker.index ?: return
             markerEditor?.setRange(index, start + inPoint, end - start)
         }
+
+        override fun markerCode(marker: Timeline.Marker): Pair<String, String> {
+            val platform = CodePlatforms.getInstance(project).current
+            val code = SnippetGenerator.playMarker(platform, SnippetMarker(marker.name, marker.start + inPoint, marker.end - marker.start, marker.label))
+            return code to LottieBundle.message("code.platform.${platform.name.lowercase()}")
+        }
     }).apply { showLayers = timelineLayersVisible }
     /** Writes marker edits made on the timeline into the JSON document (null for .lottie files, which are read-only). */
     private val markerEditor: LottieMarkerEditor? = document?.let { LottieMarkerEditor(project, it) }
@@ -262,9 +277,13 @@ class LottiePreviewPanel(
     private val detailsScroll = JBScrollPane(details).apply { border = JBUI.Borders.customLineLeft(JBColor.border()) }
     private val splitter = JBSplitter(false, "cz.xprees.lottie.details.proportion", 0.72f)
 
-    /** The `.lottie` side panel: the details, and the state machine when the file has one. */
-    private val sideTabs = JBTabbedPane().apply { addTab(LottieBundle.message("details.tab"), detailsScroll) }
+    /** The side panel: for `.lottie` files the details, the state machine when the file has one, and the code; for JSON the code. */
+    private val sideTabs = JBTabbedPane()
     private val stateMachinePanel by lazy { StateMachinePanel(stateMachineCallbacks) }
+    private val codePanel = CodeSnippetsPanel(project, this)
+    /** The shown state machine as its file defines it, and the values of the running one (for the Code tab). */
+    private var shownMachine: StateMachine? = null
+    private var liveValues: Map<String, Any?> = emptyMap()
     private val toolbar: ActionToolbar
     private val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
@@ -281,13 +300,13 @@ class LottiePreviewPanel(
         add(north, BorderLayout.NORTH)
 
         val center: JComponent = browser?.component ?: unsupportedNotice()
-        if (isJson) {
-            add(center, BorderLayout.CENTER)
-        } else {
-            splitter.firstComponent = center
-            splitter.secondComponent = sideTabs.takeIf { detailsVisible }
-            add(splitter, BorderLayout.CENTER)
-        }
+        if (!isJson) sideTabs.addTab(LottieBundle.message("details.tab"), detailsScroll)
+        sideTabs.addTab(LottieBundle.message("code.tab"), codePanel)
+        sideTabs.addChangeListener { updateCodeActive() }
+        splitter.firstComponent = center
+        splitter.secondComponent = sideTabs.takeIf { sidePanelVisible }
+        add(splitter, BorderLayout.CENTER)
+        updateCodeActive()
         add(createScrubber(), BorderLayout.SOUTH)
         PlaybackKeys.install(this, enabled = { totalFrames > 0 }) { onPlaybackKey(it, fromPage = false) }
 
@@ -417,6 +436,7 @@ class LottiePreviewPanel(
             ),
         )
         updateStateMachineTab()
+        updateCode()
         updateToolbars()
         updateLabels()
     }
@@ -499,7 +519,12 @@ class LottiePreviewPanel(
                 alt = message["alt"] == true,
             )?.takeIf { totalFrames > 0 }?.let { onPlaybackKey(it, fromPage = true) }
             "error" -> showError(LottieBundle.message("preview.error.render", message["message"] as? String ?: ""))
-            "smState" -> if (!isJson) stateMachinePanel.showSnapshot(StateMachinePanel.Snapshot.of(message))
+            "smState" -> if (!isJson) {
+                val snapshot = StateMachinePanel.Snapshot.of(message)
+                stateMachinePanel.showSnapshot(snapshot)
+                liveValues = if (snapshot.running && snapshot.id == shownStateMachineId) snapshot.values else emptyMap()
+                updateCode()
+            }
             "smEvent" -> if (!isJson) stateMachinePanel.logEvent(message)
         }
     }
@@ -687,6 +712,7 @@ class LottiePreviewPanel(
             add(DetailsToggleAction())
             add(ExtractAnimationAction())
         }
+        add(CodeToggleAction())
         add(cz.xprees.lottie.actions.OptimizeLottieAction())
     }
 
@@ -884,9 +910,63 @@ class LottiePreviewPanel(
             if (index >= 0) sideTabs.removeTabAt(index)
             return
         }
-        if (index < 0) sideTabs.addTab(LottieBundle.message("sm.tab"), stateMachinePanel)
+        if (index < 0) sideTabs.insertTab(LottieBundle.message("sm.tab"), null, stateMachinePanel, null, 1)
         val id = shownStateMachineId
-        stateMachinePanel.showDefinition(id, id?.let { archive.stateMachineText(it) }?.let(StateMachine::parse))
+        shownMachine = id?.let { archive.stateMachineText(it) }?.let(StateMachine::parse)
+        stateMachinePanel.showDefinition(id, shownMachine)
+        updateCode()
+    }
+
+    // ---- code snippets ------------------------------------------------------------------------------------------------
+
+    private val sidePanelVisible get() = if (isJson) codeVisible else detailsVisible
+
+    private fun updateCodeActive() {
+        codePanel.active = sidePanelVisible && sideTabs.selectedComponent === codePanel
+    }
+
+    /** Hands the Code tab what its snippets use: the file, its markers and the shown state machine. */
+    private fun updateCode() {
+        val info = info
+        val root = project.guessProjectDir()
+        val path = root?.let { com.intellij.openapi.vfs.VfsUtilCore.getRelativePath(file, it) } ?: file.name
+        val machine = shownMachine.takeIf { !isJson }
+        codePanel.setContext(
+            SnippetContext(
+                path = path,
+                dotLottie = !isJson,
+                markers = info?.markers.orEmpty().map { SnippetMarker(it.comment, it.start, it.duration, it.name) },
+                inPoint = info?.inPoint ?: 0.0,
+                stateMachineId = shownStateMachineId.takeIf { machine != null },
+                inputs = machine?.inputs.orEmpty(),
+                values = liveValues,
+                customEvents = machine?.customEvents.orEmpty(),
+            ),
+        )
+    }
+
+    /** The Code tab's platform for state machine code: the picked one, or dotLottie web when that one has no state machines. */
+    private fun stateMachinePlatform(): CodePlatform = CodePlatforms.getInstance(project).current.takeIf { it.stateMachines } ?: CodePlatform.DOTLOTTIE_WEB
+
+    private inner class CodeToggleAction :
+        DumbAwareToggleAction(LottieBundle.message("action.code"), LottieBundle.message("action.code.description"), AllIcons.Actions.ShowCode) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun isSelected(e: AnActionEvent) = sidePanelVisible && sideTabs.selectedComponent === codePanel
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            if (isJson) {
+                codeVisible = state
+                PropertiesComponent.getInstance().setValue(CODE_VISIBLE_KEY, state, false)
+                splitter.secondComponent = sideTabs.takeIf { state }
+            } else if (state) {
+                detailsVisible = true
+                PropertiesComponent.getInstance().setValue(DETAILS_VISIBLE_KEY, true, true)
+                splitter.secondComponent = sideTabs
+                sideTabs.selectedComponent = codePanel
+            } else {
+                sideTabs.selectedIndex = 0
+            }
+            updateCodeActive()
+        }
     }
 
     private val stateMachineCallbacks = object : StateMachinePanel.Callbacks {
@@ -938,6 +1018,12 @@ class LottiePreviewPanel(
         override fun deleteInput(input: StateMachineInput) {
             editStateMachine(LottieBundle.message("sm.command.delete.input")) { it.deleteInput(input.name) }
         }
+
+        override fun inputCode(input: StateMachineInput, value: Any?): String = SnippetGenerator.input(stateMachinePlatform(), input, value).orEmpty()
+
+        override fun customEventsCode(): String = SnippetGenerator.customEvents(stateMachinePlatform(), shownMachine?.customEvents.orEmpty()).orEmpty()
+
+        override fun codePlatformName(): String = LottieBundle.message("code.platform.${stateMachinePlatform().name.lowercase()}")
     }
 
     /** The shown state machine as the file on disk has it now (edits waiting in an open JSON document written first). */
@@ -962,6 +1048,7 @@ class LottiePreviewPanel(
             detailsVisible = state
             PropertiesComponent.getInstance().setValue(DETAILS_VISIBLE_KEY, state, true)
             splitter.secondComponent = sideTabs.takeIf { state }
+            updateCodeActive()
         }
     }
 
@@ -978,6 +1065,7 @@ class LottiePreviewPanel(
         private const val UPDATE_DELAY_MS = 300
         private const val PALETTE_VISIBLE_KEY = "cz.xprees.lottie.palette.visible"
         private const val DETAILS_VISIBLE_KEY = "cz.xprees.lottie.details.visible"
+        private const val CODE_VISIBLE_KEY = "cz.xprees.lottie.code.visible"
         private const val TIMELINE_LAYERS_KEY = "cz.xprees.lottie.timeline.layers"
         private const val LOCAL_SEEK_GRACE_MS = 400L
         private const val DUPLICATE_KEY_MS = 250L
