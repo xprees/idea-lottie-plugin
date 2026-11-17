@@ -1,0 +1,3 @@
+<!-- Loaded when the JCEF plugin is present (see plugin.xml). Its only purpose is the dependency, which makes the JCEF classes
+     visible to the preview; nothing needs registering. -->
+<idea-plugin/>

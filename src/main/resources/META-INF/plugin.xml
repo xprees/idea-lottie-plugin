@@ -8,6 +8,10 @@
     <depends>com.intellij.modules.platform</depends>
     <!-- Lottie .json files stay JSON files; the Lottie features build on the JSON plugin -->
     <depends>com.intellij.modules.json</depends>
+    <!-- The preview's embedded browser. Part of the platform in 2026.1 and 2026.2; from 2026.3 a separate bundled plugin
+         ("Web Browser (JCEF)") whose classes a plugin only sees when it depends on it. Optional, so the plugin also loads where
+         JCEF is missing; the preview then shows a notice. -->
+    <depends optional="true" config-file="lottie-jcef.xml">com.intellij.modules.jcef</depends>
     <!-- Rider's Solution Explorer has its own popup group instead of ProjectViewPopupMenu -->
     <depends optional="true" config-file="lottie-rider.xml">com.intellij.modules.rider</depends>
 

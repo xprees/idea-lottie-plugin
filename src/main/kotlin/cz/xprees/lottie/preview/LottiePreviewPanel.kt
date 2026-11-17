@@ -34,7 +34,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.jcef.JBCefApp
 import com.intellij.util.Alarm
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
@@ -129,7 +128,7 @@ class LottiePreviewPanel(
         }
 
     // ---- UI -----------------------------------------------------------------------------------------------------------
-    private val browser: PreviewBrowser? = if (JBCefApp.isSupported()) {
+    private val browser: PreviewBrowser? = if (JcefSupport.isAvailable()) {
         PreviewBrowser(this, ::initConfig, { data }, ::onMessage)
     } else {
         null

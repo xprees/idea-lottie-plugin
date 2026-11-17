@@ -253,6 +253,17 @@ intellijPlatform {
     }
 }
 
+// `runIdeLatest`: the plugin in the newest IDEA the Plugin Verifier checks (the last of verifyIdeaVersions), next to `runIde`'s
+// oldest supported one. Platform changes such as modules moving into separate plugins only show up when the plugin really runs there.
+intellijPlatformTesting {
+    runIde {
+        register("runIdeLatest") {
+            type = IntelliJPlatformType.IntellijIdea
+            version = versionList("verifyIdeaVersions").map { it.last() }
+        }
+    }
+}
+
 changelog {
     groups.empty()
     // tags are plain versions (0.1.0), so compare/commit links in the changelog must not add the default "v" prefix
