@@ -22,10 +22,25 @@
         <fileEditorProvider implementation="cz.xprees.lottie.preview.LottieJsonEditorProvider"/>
         <fileEditorProvider implementation="cz.xprees.lottie.preview.DotLottieEditorProvider"/>
 
+        <colorProvider implementation="cz.xprees.lottie.editor.LottieColorProvider"/>
+        <codeInsight.declarativeInlayProvider language="JSON"
+                                              implementationClass="cz.xprees.lottie.editor.LottieInlayHintsProvider"
+                                              isEnabledByDefault="true" group="VALUES_GROUP" providerId="cz.xprees.lottie.hints"
+                                              bundle="messages.LottieBundle" nameKey="inlay.provider.name"
+                                              descriptionKey="inlay.provider.description"/>
+
         <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
         <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
                                  instance="cz.xprees.lottie.settings.LottieConfigurable"
                                  key="settings.display.name" bundle="messages.LottieBundle"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="JavaScript.JsonSchema">
+        <ProviderFactory implementation="cz.xprees.lottie.editor.LottieJsonSchemaProviderFactory"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij.json">
+        <customStructureViewFactory implementation="cz.xprees.lottie.editor.LottieStructureViewFactory"/>
     </extensions>
 
     <actions>
