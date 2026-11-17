@@ -25,11 +25,19 @@ object PlatformDetector {
     private fun dependency(name: String): (String) -> Boolean = { text -> Regex("\"" + Regex.escape(name) + "\"\\s*:").containsMatchIn(text) }
 
     private val NPM = listOf(
+        Rule(101, CodePlatform.DOTLOTTIE_REACT_NATIVE, dependency("@lottiefiles/dotlottie-react-native")),
         Rule(100, CodePlatform.DOTLOTTIE_REACT, dependency("@lottiefiles/dotlottie-react")),
+        Rule(100, CodePlatform.DOTLOTTIE_VUE, dependency("@lottiefiles/dotlottie-vue")),
+        Rule(100, CodePlatform.DOTLOTTIE_SVELTE, dependency("@lottiefiles/dotlottie-svelte")),
+        Rule(100, CodePlatform.DOTLOTTIE_SOLID, dependency("@lottiefiles/dotlottie-solid")),
+        Rule(100, CodePlatform.DOTLOTTIE_WEB_COMPONENT, dependency("@lottiefiles/dotlottie-wc")),
         Rule(100, CodePlatform.REACT_NATIVE, dependency("lottie-react-native")),
-        Rule(95, CodePlatform.DOTLOTTIE_WEB, has("\"@lottiefiles/dotlottie-web\"", "\"@lottiefiles/dotlottie-vue\"", "\"@lottiefiles/dotlottie-svelte\"", "\"@lottiefiles/dotlottie-wc\"", "\"@lottiefiles/dotlottie-solid\"")),
+        Rule(95, CodePlatform.DOTLOTTIE_WEB, dependency("@lottiefiles/dotlottie-web")),
         Rule(90, CodePlatform.LOTTIE_WEB, has("\"lottie-web\"", "\"lottie-react\"", "\"react-lottie\"", "\"vue3-lottie\"", "\"ngx-lottie\"")),
-        Rule(60, CodePlatform.REACT_NATIVE, dependency("react-native")),
+        Rule(60, CodePlatform.DOTLOTTIE_REACT_NATIVE, dependency("react-native")),
+        Rule(55, CodePlatform.DOTLOTTIE_VUE, dependency("vue")),
+        Rule(55, CodePlatform.DOTLOTTIE_SVELTE, dependency("svelte")),
+        Rule(55, CodePlatform.DOTLOTTIE_SOLID, dependency("solid-js")),
         Rule(50, CodePlatform.DOTLOTTIE_REACT, dependency("react")),
         Rule(30, CodePlatform.DOTLOTTIE_WEB) { true },
     )
@@ -50,8 +58,9 @@ object PlatformDetector {
     )
 
     private val PUB = listOf(
+        Rule(101, CodePlatform.DOTLOTTIE_FLUTTER, Regex("(?m)^\\s+dotlottie_flutter\\s*:")::containsMatchIn),
         Rule(100, CodePlatform.FLUTTER, Regex("(?m)^\\s+lottie\\s*:")::containsMatchIn),
-        Rule(50, CodePlatform.FLUTTER, has("flutter:", "sdk: flutter")),
+        Rule(50, CodePlatform.DOTLOTTIE_FLUTTER, has("flutter:", "sdk: flutter")),
     )
 
     private fun compose(text: String) = text.contains("compose", ignoreCase = true)

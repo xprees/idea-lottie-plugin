@@ -106,6 +106,19 @@ class RecolorTest {
     }
 
     @Test
+    fun `the highlight mask makes one color white and every other color black`() {
+        val root = root()
+        val colors = palette(root)
+        val white = colors.single { it.color.hex == "#ffffff" }
+        val mask = Recolor.mask(root, colors, white)
+        val masked = palette(mask)
+        assertThat(masked.map { it.color.hex }).containsOnly("#ffffff", "#000000")
+        assertThat(masked.single { it.color.hex == "#ffffff" }.count).isEqualTo(white.count)
+        // the original is untouched
+        assertThat(palette(root).map { it.color.hex }).isEqualTo(colors.map { it.color.hex })
+    }
+
+    @Test
     fun `the manifest lists a new theme once`() {
         val manifest = MiniJson.parse("""{"version":"2","animations":[{"id":"a","themes":["old"]}],"themes":[{"id":"old"}]}""").obj()!!
         val m = Recolor.manifestWithTheme(manifest, "night", "Night mode", "a")

@@ -17,6 +17,10 @@ class PlaybackKeysTest {
         assertThat(key("ArrowRight", shift = true)).isEqualTo(PlaybackKey.FORWARD_10)
         assertThat(key("Home")).isEqualTo(PlaybackKey.FIRST)
         assertThat(key("End")).isEqualTo(PlaybackKey.LAST)
+        assertThat(key("l")).isEqualTo(PlaybackKey.LOOP)
+        assertThat(key("L")).isEqualTo(PlaybackKey.LOOP)
+        assertThat(key("L", shift = true)).isNull()
+        assertThat(key("l", ctrl = true)).isNull()
     }
 
     @Test

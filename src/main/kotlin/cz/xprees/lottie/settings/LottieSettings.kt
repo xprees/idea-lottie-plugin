@@ -21,6 +21,9 @@ class LottieSettings : PersistentStateComponent<LottieSettings.State> {
 
     enum class Background { CHECKERBOARD, LIGHT, DARK, CUSTOM }
 
+    /** What hovering a palette color shows in the preview. */
+    enum class PaletteHighlight { OUTLINE, DIM, NONE }
+
     class State {
         /** Recognize plain `.json` files by their content (the `.lottie.json` name always counts). */
         var sniffJson: Boolean = true
@@ -36,6 +39,8 @@ class LottieSettings : PersistentStateComponent<LottieSettings.State> {
         var inlayHints: Boolean = true
         /** Highlight the layer at the caret in the preview, and jump to the layer clicked in the preview. */
         var previewSync: Boolean = true
+        /** Hovering a palette color outlines the shapes using it, or dims the other colors. */
+        var paletteHighlight: PaletteHighlight = PaletteHighlight.OUTLINE
     }
 
     private var state = State()

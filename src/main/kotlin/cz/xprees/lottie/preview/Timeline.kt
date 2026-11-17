@@ -478,6 +478,18 @@ internal class Timeline(private val callbacks: Callbacks) {
             layerAt(e.y)?.let { callbacks.layerClicked(it.index) }
         }
 
+        // the layer rows offer adding markers too: the markers lane is a thin strip above them
+        override fun popup(e: MouseEvent) {
+            if (!editableMarkers) return
+            val menu = JBPopupMenu()
+            fun item(text: String, run: () -> Unit) = menu.add(JBMenuItem(text).apply { addActionListener { run() } })
+            val playhead = Math.round(frame).toDouble()
+            val atMouse = if (e.x >= labelWidth) scale(width).frame(e.x) else playhead
+            item(LottieBundle.message("timeline.marker.add.at", formatFrame(atMouse))) { callbacks.addMarker(atMouse) }
+            if (atMouse != playhead) item(LottieBundle.message("timeline.marker.add.playhead", formatFrame(playhead))) { callbacks.addMarker(playhead) }
+            menu.show(this, e.x, e.y)
+        }
+
         override fun doubleClicked(e: MouseEvent): Boolean {
             val layer = layerAt(e.y) ?: return false
             callbacks.layerClicked(layer.index)

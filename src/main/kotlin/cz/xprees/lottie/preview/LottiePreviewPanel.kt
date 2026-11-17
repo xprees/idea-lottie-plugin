@@ -151,7 +151,7 @@ class LottiePreviewPanel(
 
     // ---- UI -----------------------------------------------------------------------------------------------------------
     private val browser: PreviewBrowser? = if (JcefSupport.isAvailable()) {
-        PreviewBrowser(this, ::initConfig, { _ -> data }, ::onMessage)
+        PreviewBrowser(this, ::initConfig, { name -> if (name.startsWith("mask-")) maskData else data }, ::onMessage)
     } else {
         null
     }
@@ -213,7 +213,7 @@ class LottiePreviewPanel(
         }
 
         override fun addMarker(frame: Double) {
-            val editor = markerEditor ?: return
+            val editor = markerEditor
             val name = askMarkerName(LottieBundle.message("marker.add.title"), defaultMarkerName(), null) ?: return
             editor.add(name, frame + inPoint)
         }
@@ -221,16 +221,16 @@ class LottiePreviewPanel(
         override fun renameMarker(marker: Timeline.Marker) {
             val index = marker.index ?: return
             val name = askMarkerName(LottieBundle.message("marker.rename.title"), marker.label, marker) ?: return
-            if (name != marker.label) markerEditor?.rename(index, name)
+            if (name != marker.label) markerEditor.rename(index, name)
         }
 
         override fun deleteMarker(marker: Timeline.Marker) {
-            marker.index?.let { markerEditor?.delete(it) }
+            marker.index?.let { markerEditor.delete(it) }
         }
 
         override fun changeMarker(marker: Timeline.Marker, start: Double, end: Double) {
             val index = marker.index ?: return
-            markerEditor?.setRange(index, start + inPoint, end - start)
+            markerEditor.setRange(index, start + inPoint, end - start)
         }
 
         override fun markerCode(marker: Timeline.Marker): Pair<String, String> {
@@ -240,7 +240,8 @@ class LottiePreviewPanel(
         }
     }).apply { showLayers = timelineLayersVisible }
     /** Writes marker edits made on the timeline into the JSON document (null for .lottie files, which are read-only). */
-    private val markerEditor: LottieMarkerEditor? = document?.let { LottieMarkerEditor(project, it) }
+    private val markerEditor: cz.xprees.lottie.editor.MarkerEditor =
+        document?.let { LottieMarkerEditor(project, it) } ?: cz.xprees.lottie.editor.DotLottieMarkerEditor(project, file) { animationId }
 
     private fun defaultMarkerName(): String {
         val taken = timeline.markers.map { it.label }.toSet()
@@ -267,6 +268,12 @@ class LottiePreviewPanel(
     }
 
     private val frameLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    /** "Lottie 5.12.1", or "dotLottie 2 · Lottie 5.7.4" for `.lottie` files. */
+    private val versionLabel = JBLabel().apply {
+        foreground = UIUtil.getContextHelpForeground()
+        border = JBUI.Borders.empty(0, 6, 0, 8)
+    }
+    private var shownSpecVersion: Int? = null
     private val infoLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
         horizontalAlignment = SwingConstants.RIGHT
@@ -300,7 +307,11 @@ class LottiePreviewPanel(
         toolbar = ActionManager.getInstance().createActionToolbar("LottiePreview", createActions(), true).apply {
             targetComponent = this@LottiePreviewPanel
         }
-        north.add(toolbar.component)
+        // the toolbar, with the file's versions in muted text at its end
+        north.add(JPanel(BorderLayout()).apply {
+            add(toolbar.component, BorderLayout.CENTER)
+            add(versionLabel, BorderLayout.EAST)
+        })
         north.add(errorBanner)
         north.add(paletteStrip)
         paletteStrip.isVisible = paletteVisible
@@ -335,7 +346,43 @@ class LottiePreviewPanel(
         updateLabels()
     }
 
-    private fun createPaletteStrip() = PaletteStrip(onNavigateToColor, ::recolor)
+    private fun createPaletteStrip() = PaletteStrip(onNavigateToColor, ::recolor, ::hoverColor)
+
+    // ---- palette highlight: hovering a swatch shows where its color is used ---------------------------------------------
+
+    private var paletteRoot: Any? = null
+    @Volatile
+    private var maskData: ByteArray? = null
+    private var maskVersion = 0
+    private var hoveredColor: PaletteEntry? = null
+    private var colorHighlightShown = false
+    private val hoverAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
+    private fun hoverColor(entry: PaletteEntry?) {
+        hoveredColor = entry
+        hoverAlarm.cancelAllRequests()
+        val mode = settings.paletteHighlight
+        if (entry == null || mode == LottieSettings.PaletteHighlight.NONE || browser == null) {
+            if (colorHighlightShown) browser?.call("highlightColor", null, null)
+            colorHighlightShown = false
+            return
+        }
+        // a short pause, so that sweeping over the swatches doesn't build a mask for each
+        hoverAlarm.addRequest({
+            val root = paletteRoot ?: return@addRequest
+            val colors = palette
+            AppExecutorUtil.getAppExecutorService().execute {
+                val bytes = runCatching { MiniJson.write(Recolor.mask(root, colors, entry)).toByteArray(Charsets.UTF_8) }.getOrNull()
+                ApplicationManager.getApplication().invokeLater({
+                    if (disposed || bytes == null || hoveredColor !== entry) return@invokeLater
+                    maskData = bytes
+                    maskVersion++
+                    colorHighlightShown = true
+                    browser.call("highlightColor", "${PreviewBrowser.ORIGIN}data/mask-$maskVersion", mode.name.lowercase())
+                }, { disposed })
+            }
+        }, HOVER_DELAY_MS)
+    }
 
     override fun uiDataSnapshot(sink: DataSink) {
         sink[CommonDataKeys.VIRTUAL_FILE] = file
@@ -358,6 +405,8 @@ class LottiePreviewPanel(
         val archive: DotLottieArchive?,
         /** The file size as the info line shows it: the document, or the archive and the shown animation's JSON. */
         val size: String? = null,
+        /** The parsed animation the palette was read from (with the shown theme's colors), for the palette highlight. */
+        val root: Any? = null,
     )
 
     private fun update() {
@@ -384,7 +433,7 @@ class LottiePreviewPanel(
         val info = LottieModel.read(root) ?: return Prepared(null, LottieBundle.message("preview.error.not.lottie"), null, emptyList(), null)
         val palette = PaletteScanner.palette(PaletteScanner.scan(root))
         val bytes = text.toString().toByteArray(Charsets.UTF_8)
-        return Prepared(bytes, null, info, palette, null, StringUtil.formatFileSize(bytes.size.toLong()))
+        return Prepared(bytes, null, info, palette, null, StringUtil.formatFileSize(bytes.size.toLong()), root)
     }
 
     /** [currentTheme]: the theme shown ([themeKnown] false before the first load: the animation's initial theme then). */
@@ -399,7 +448,7 @@ class LottiePreviewPanel(
         val root = theme?.let(archive::themeText)?.let(MiniJson::parseOrNull)?.let { Recolor.themed(parsed, it, id) } ?: parsed
         val size = StringUtil.formatFileSize(bytes.size.toLong()) +
             (text?.let { " " + LottieBundle.message("preview.size.json", StringUtil.formatFileSize(it.toByteArray(Charsets.UTF_8).size.toLong())) } ?: "")
-        return Prepared(bytes, null, LottieModel.read(root), PaletteScanner.palette(PaletteScanner.scan(root)), archive, size)
+        return Prepared(bytes, null, LottieModel.read(root), PaletteScanner.palette(PaletteScanner.scan(root)), archive, size, root)
     }
 
     private fun apply(prepared: Prepared) {
@@ -411,14 +460,15 @@ class LottiePreviewPanel(
         info = prepared.info
         fileSize = prepared.size
         timeline.layers = timelineLayers(prepared.info)
-        if (isJson) {
-            val ip = prepared.info?.inPoint ?: 0.0
-            timeline.markers = prepared.info?.markers.orEmpty().map {
-                Timeline.Marker(it.comment, it.name, it.start - ip, it.end - ip, it.index)
-            }
-            timeline.editableMarkers = document?.isWritable == true
+        // the markers of the shown animation, editable in JSON documents and in .lottie files alike
+        val ip = prepared.info?.inPoint ?: 0.0
+        timeline.markers = prepared.info?.markers.orEmpty().map {
+            Timeline.Marker(it.comment, it.name, it.start - ip, it.end - ip, it.index)
         }
+        timeline.editableMarkers = prepared.info != null && (document?.isWritable ?: file.isWritable)
+        updateVersions(prepared)
         palette = prepared.palette
+        paletteRoot = prepared.root
         paletteStrip.setPalette(palette)
         val firstLoad = !loadedOnce
         prepared.archive?.let { archive ->
@@ -454,6 +504,18 @@ class LottiePreviewPanel(
         updateCode()
         updateToolbars()
         updateLabels()
+    }
+
+    private fun updateVersions(prepared: Prepared) {
+        val lottie = prepared.info?.version?.takeIf { it.isNotBlank() }?.let { LottieBundle.message("version.lottie", it) }
+        val spec = prepared.archive?.specVersion
+        versionLabel.text = listOfNotNull(spec?.let { LottieBundle.message("version.dotlottie", it) }, lottie).joinToString(" · ")
+        versionLabel.toolTipText = LottieBundle.message(if (spec != null) "version.tooltip.dotlottie" else "version.tooltip.lottie")
+        // the editor tab shows the dotLottie version: refresh it when a conversion changed it
+        if (spec != null && spec != shownSpecVersion) {
+            if (shownSpecVersion != null) com.intellij.openapi.fileEditor.ex.FileEditorManagerEx.getInstanceEx(project).updateFilePresentation(file)
+            shownSpecVersion = spec
+        }
     }
 
     private fun showError(message: String?) {
@@ -495,8 +557,7 @@ class LottiePreviewPanel(
                     Timeline.Marker(name, m["label"] as? String ?: name, (m["start"] as? Number)?.toDouble() ?: 0.0, (m["end"] as? Number)?.toDouble() ?: 0.0)
                 }
                 markers = playerMarkers.map { it.name to it.label }
-                // JSON files take the timeline's markers from the document (editable, with their array index)
-                if (!isJson) timeline.markers = playerMarkers
+                // the timeline takes the markers from the file (editable, with their array index), not from the player
                 if (marker != null && markers.none { it.first == marker }) marker = null
                 playing = message["playing"] == true
                 (message["activeAnimationId"] as? String)?.let { animationId = it }
@@ -605,7 +666,14 @@ class LottiePreviewPanel(
             PlaybackKey.FORWARD_10 -> step(10.0)
             PlaybackKey.FIRST -> seekLocally(0.0)
             PlaybackKey.LAST -> seekLocally(last)
+            PlaybackKey.LOOP -> setLoop(!loop)
         }
+    }
+
+    private fun setLoop(state: Boolean) {
+        loop = state
+        browser?.call("setLoop", state)
+        updateToolbars()
     }
 
     private fun togglePlayback() {
@@ -761,7 +829,7 @@ class LottiePreviewPanel(
 
         override fun actionPerformed(e: AnActionEvent) {
             val name = askMarkerName(LottieBundle.message("marker.add.title"), defaultMarkerName(), null) ?: return
-            markerEditor?.add(name, Math.round(frame) + inPoint)
+            markerEditor.add(name, Math.round(frame) + inPoint)
         }
     }
 
@@ -778,10 +846,7 @@ class LottiePreviewPanel(
     private inner class LoopAction : DumbAwareToggleAction(LottieBundle.message("action.loop"), null, AllIcons.Actions.Refresh) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun isSelected(e: AnActionEvent) = loop
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            loop = state
-            browser?.call("setLoop", state)
-        }
+        override fun setSelected(e: AnActionEvent, state: Boolean) = setLoop(state)
     }
 
     private inner class ZoomAction(text: String, icon: javax.swing.Icon, private val run: () -> Unit) : PreviewAction(text, icon) {
@@ -1131,6 +1196,7 @@ class LottiePreviewPanel(
         private const val TIMELINE_LAYERS_KEY = "cz.xprees.lottie.timeline.layers"
         private const val LOCAL_SEEK_GRACE_MS = 400L
         private const val DUPLICATE_KEY_MS = 250L
+        private const val HOVER_DELAY_MS = 120
     }
 }
 

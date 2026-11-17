@@ -4,6 +4,28 @@
 
 ### Added
 
+- More platforms in the *Code* tab: dotLottie Vue, Svelte, Solid, Web Component, React Native and Flutter, also guessed from the
+  project's dependencies
+- Markers of `.lottie` files are edited on the timeline like those of JSON files (add, rename, move, delete), each edit undoable
+- Right-clicking a layer row of the timeline offers adding a marker, like the markers lane
+- *L* turns looping on or off anywhere in the preview
+- Hovering a palette color outlines where it is used in the preview; *Dim the other colors* in the settings veils everything else
+  instead
+- The Lottie and dotLottie versions at the end of the preview toolbar, and the dotLottie version in a `.lottie` file's editor tab
+- The recolor dialog explains that themes need dotLottie 2.0 when the file is 1.0
+
+### Changed
+
+- The *Code* tab plays markers by their name only; the snippet that checked frame ranges is gone
+
+### Fixed
+
+- Playback keys work while the read-only dotLottie details have the focus
+
+## [2026.3.3] - 2026-11-17
+
+### Added
+
 - A *Code* tab in the preview with ready-to-copy code for the open animation: load it, play each marker, react when playback
   enters a marker, start the state machine, set each input and listen to its custom events. For dotLottie Web and React,
   lottie-web, Lottie React Native, dotLottie Android (Compose, View), Lottie Android and Compose, dotLottie iOS, Lottie iOS and
@@ -59,5 +81,6 @@
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
 
-[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...HEAD
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.3...HEAD
+[2026.3.3]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...2026.3.3
 [2026.3.2]: https://github.com/xprees/idea-lottie-plugin/commits/2026.3.2

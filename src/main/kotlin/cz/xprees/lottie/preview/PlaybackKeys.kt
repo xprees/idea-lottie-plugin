@@ -12,11 +12,12 @@ import javax.swing.text.JTextComponent
 
 /**
  * Playback keys of the preview, wherever the focus is inside it (the canvas, the timeline, the toolbars):
- * Space plays or pauses, ←/→ step one frame (Shift: ten), Ctrl+←/→ (⌘ on macOS) or Home/End jump to the first or last frame.
+ * Space plays or pauses, ←/→ step one frame (Shift: ten), Ctrl+←/→ (⌘ on macOS) or Home/End jump to the first or last frame, and
+ * L turns looping on or off.
  *
  * The canvas is a browser with its own keyboard focus, so the page forwards the same keys ([fromPage]) instead of Swing.
  */
-enum class PlaybackKey { TOGGLE, PREVIOUS, NEXT, BACK_10, FORWARD_10, FIRST, LAST }
+enum class PlaybackKey { TOGGLE, PREVIOUS, NEXT, BACK_10, FORWARD_10, FIRST, LAST, LOOP }
 
 object PlaybackKeys {
 
@@ -33,6 +34,7 @@ object PlaybackKeys {
         KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, jump) to PlaybackKey.LAST,
         KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0) to PlaybackKey.FIRST,
         KeyStroke.getKeyStroke(KeyEvent.VK_END, 0) to PlaybackKey.LAST,
+        KeyStroke.getKeyStroke(KeyEvent.VK_L, 0) to PlaybackKey.LOOP,
     )
 
     /** The key of a page `keydown` ([key] is the DOM `KeyboardEvent.key`), or null for any other key. */
@@ -44,6 +46,7 @@ object PlaybackKeys {
             " " -> PlaybackKey.TOGGLE.takeIf { plain }
             "Home" -> PlaybackKey.FIRST.takeIf { plain }
             "End" -> PlaybackKey.LAST.takeIf { plain }
+            "l", "L" -> PlaybackKey.LOOP.takeIf { plain }
             "ArrowLeft" -> when {
                 plain -> PlaybackKey.PREVIOUS
                 shift && !ctrl && !meta -> PlaybackKey.BACK_10
@@ -62,7 +65,7 @@ object PlaybackKeys {
 
     /**
      * Binds the keys on [component] for its whole subtree. They step aside (the event goes on to the focused control or the IDE)
-     * while a text field has the focus, so typing a space or moving the caret in the state machine panel still works, and while
+     * while an editable text field has the focus, so typing a space or moving the caret in the state machine panel still works, and while
      * [enabled] is false (nothing loaded).
      */
     fun install(component: JComponent, enabled: () -> Boolean, run: (PlaybackKey) -> Unit) {
@@ -71,8 +74,9 @@ object PlaybackKeys {
             val id = "lottie.playback.$key"
             inputMap.put(stroke, id)
             component.actionMap.put(id, object : AbstractAction() {
+                // only editable text steps aside: read-only text (the dotLottie details) keeps the playback keys
                 override fun isEnabled(): Boolean =
-                    enabled() && KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner !is JTextComponent
+                    enabled() && (KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner as? JTextComponent)?.isEditable != true
 
                 override fun actionPerformed(e: ActionEvent?) = run(key)
             })

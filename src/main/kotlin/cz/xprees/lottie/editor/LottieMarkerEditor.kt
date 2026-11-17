@@ -23,26 +23,26 @@ import cz.xprees.lottie.model.MarkerNames
  * Each edit is one undoable command. Markers that aren't edited keep their text (and any extra properties); the array is reformatted
  * with the project's JSON code style. Frames are composition frames (`tm`), not relative to the in point.
  */
-class LottieMarkerEditor(private val project: Project, private val document: Document) {
+class LottieMarkerEditor(private val project: Project, private val document: Document) : MarkerEditor {
 
     /** Adds a marker and keeps the array sorted by start frame. */
-    fun add(name: String, start: Double, duration: Double = 0.0) = edit(LottieBundle.message("marker.command.add")) { markers ->
+    override fun add(name: String, start: Double, duration: Double) = edit(LottieBundle.message("marker.command.add")) { markers ->
         val entry = MiniJson.write(linkedMapOf<String, Any?>("cm" to name, "tm" to whole(start), "dr" to whole(duration)))
         val at = markers.indexOfFirst { (MiniJson.parseOrNull(it).obj()?.get("tm").num() ?: 0.0) > start }.let { if (it < 0) markers.size else it }
         markers.add(at, entry)
     }
 
-    fun delete(index: Int) = edit(LottieBundle.message("marker.command.delete")) { markers ->
+    override fun delete(index: Int) = edit(LottieBundle.message("marker.command.delete")) { markers ->
         if (index in markers.indices) markers.removeAt(index)
     }
 
     /** Renames marker [index], keeping an After Effects JSON comment (`{"name": ...}`) in that form. */
-    fun rename(index: Int, name: String) = update(index, LottieBundle.message("marker.command.rename")) { marker ->
+    override fun rename(index: Int, name: String) = update(index, LottieBundle.message("marker.command.rename")) { marker ->
         marker["cm"] = MarkerNames.rename(marker["cm"].str(), name)
     }
 
     /** Moves marker [index] to [start] with [duration] (both in composition frames). */
-    fun setRange(index: Int, start: Double, duration: Double) = update(index, LottieBundle.message("marker.command.move")) { marker ->
+    override fun setRange(index: Int, start: Double, duration: Double) = update(index, LottieBundle.message("marker.command.move")) { marker ->
         marker["tm"] = whole(start)
         marker["dr"] = whole(duration.coerceAtLeast(0.0))
     }

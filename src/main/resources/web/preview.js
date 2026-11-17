@@ -26,6 +26,8 @@ const state = {
   zoom: 1,
   lastFrameSent: 0,
   highlight: null,
+  /** The palette color highlight: { mode: 'outline' | 'dim' } while a swatch is hovered, else null. */
+  colorHighlight: null,
   pickEnabled: false,
   loadToken: 0,
   /** Id of the running dotLottie state machine. */
@@ -44,8 +46,8 @@ function send(msg) {
 }
 
 // The canvas has the keyboard focus after a click, so the IDE never sees these keys: hand the playback keys (Space, arrows,
-// Home/End, with their modifiers) to the plugin, which maps them like the rest of the preview (PlaybackKeys.kt).
-const PLAYBACK_KEYS = new Set([' ', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+// Home/End, L, with their modifiers) to the plugin, which maps them like the rest of the preview (PlaybackKeys.kt).
+const PLAYBACK_KEYS = new Set([' ', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'l', 'L']);
 document.addEventListener('keydown', (e) => {
   if (!PLAYBACK_KEYS.has(e.key) || e.isComposing) return;
   e.preventDefault();
@@ -109,7 +111,8 @@ new ResizeObserver(() => {
 function attachEvents(player) {
   player.addEventListener('frame', () => {
     sendFrame(false);
-    if (state.highlight != null) updateHighlightFrame();
+    if (state.colorHighlight) updateColorFrame();
+    else if (state.highlight != null) updateHighlightFrame();
   });
   player.addEventListener('play', () => send({ type: 'playing', playing: true }));
   player.addEventListener('pause', () => { send({ type: 'playing', playing: false }); sendFrame(true); });
@@ -296,7 +299,8 @@ const api = {
     p.pause();
     p.setFrame(frame);
     sendFrame(true);
-    if (state.highlight != null) updateHighlightFrame();
+    if (state.colorHighlight) updateColorFrame();
+    else if (state.highlight != null) updateHighlightFrame();
   },
   setMarker(name) {
     const p = state.player;
@@ -368,6 +372,32 @@ const api = {
   setPickEnabled(enabled) {
     state.pickEnabled = enabled;
     frameBox.classList.toggle('pickable', enabled && state.json != null);
+  },
+  /**
+   * Shows where a palette color is used: `url` serves a copy of the animation with that color white and every other color black
+   * (images hidden), which the probe renders frame by frame. 'outline' draws the white area's edge, 'dim' veils everything else.
+   * A null url ends it, and any layer highlight comes back.
+   */
+  async highlightColor(url, mode) {
+    const token = ++colorToken;
+    if (!url) {
+      state.colorHighlight = null;
+      colorMask = null;
+      state.probeLayer = null;
+      if (state.highlight != null && state.json != null) api.highlightLayer(state.highlight); else clearOverlay();
+      return;
+    }
+    try {
+      const data = await (await fetch(url)).json();
+      if (token !== colorToken) return;
+      state.probeLayer = null;
+      await loadProbe(data);
+      if (token !== colorToken) return;
+      state.colorHighlight = { mode: mode === 'dim' ? 'dim' : 'outline' };
+      await updateColorFrame();
+    } catch (e) {
+      if (token === colorToken) state.colorHighlight = null;
+    }
   },
   /** Outlines root layer `index` (0 = topmost) at the current frame; null clears the outline. */
   highlightLayer(index) {
@@ -488,6 +518,78 @@ async function updateHighlightFrame() {
   }
 }
 
+// ---- Palette color highlight: the probe renders the mask animation (the color white, the rest black) ------------------------
+
+let colorToken = 0;
+let colorBusy = false;
+/** The last mask: a canvas the probe's size, the color's area tinted and its edge drawn in the highlight color. */
+let colorMask = null;
+
+async function updateColorFrame() {
+  if (colorBusy || !state.colorHighlight || !state.probe) return;
+  colorBusy = true;
+  try {
+    const token = colorToken;
+    const image = await renderProbe(state.player.currentFrame);
+    if (!image || token !== colorToken || !state.colorHighlight) return;
+    colorMask = maskCanvas(image, state.colorHighlight.mode);
+    drawColorHighlight();
+  } finally {
+    colorBusy = false;
+  }
+}
+
+function maskCanvas(image, mode) {
+  const { width, height, data } = image;
+  const inside = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const a = data[i * 4 + 3];
+    // white and opaque enough: the color shows there (anti-aliased edges and translucent overlaps count from half)
+    if (a > 32 && data[i * 4] > 127) inside[i] = 1;
+  }
+  const out = new ImageData(width, height);
+  const highlight = hexColor(getComputedStyle(document.documentElement).getPropertyValue('--highlight').trim() || '#3574f0');
+  const veil = hexColor(getComputedStyle(document.documentElement).getPropertyValue('--checker-a').trim() || '#ffffff');
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const o = i * 4;
+      if (inside[i]) {
+        const edge = x === 0 || y === 0 || x === width - 1 || y === height - 1 ||
+          !inside[i - 1] || !inside[i + 1] || !inside[i - width] || !inside[i + width];
+        if (edge) {
+          out.data.set([highlight[0], highlight[1], highlight[2], 255], o);
+        } else if (mode === 'outline') {
+          out.data.set([highlight[0], highlight[1], highlight[2], 40], o);
+        }
+      } else if (mode === 'dim') {
+        out.data.set([veil[0], veil[1], veil[2], 200], o);
+      }
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = width;
+  c.height = height;
+  c.getContext('2d').putImageData(out, 0, 0);
+  return c;
+}
+
+function hexColor(hex) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function drawColorHighlight() {
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!colorMask || !state.colorHighlight) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(colorMask, 0, 0, overlay.width, overlay.height);
+  ctx.restore();
+}
+
 function clearOverlay() {
   highlightBox = null;
   const ctx = overlay.getContext('2d');
@@ -495,6 +597,7 @@ function clearOverlay() {
 }
 
 function drawHighlight() {
+  if (state.colorHighlight) return drawColorHighlight();
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   if (!highlightBox || state.highlight == null) return;
