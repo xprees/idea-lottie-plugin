@@ -11,8 +11,11 @@
   error while the JSON is invalid
 - dotLottie files open in the preview, with pickers for the animation, theme and state machine, and a panel with the manifest and
   the files of the archive
-- Preview controls: play/pause, loop, speed, frame scrubber, markers, zoom (also Ctrl/⌘ + wheel) and a checkerboard, light, dark
-  or custom background. Rendered by the bundled dotLottie player (ThorVG, WebAssembly), without network access
+- A timeline under the preview to scrub through the animation: frame ruler and playhead, markers as named segments, optional lanes
+  with each layer's in/out range; drag to scrub, keyboard stepping (←/→, Shift for ten frames, Home/End, Space), double-click a
+  marker to play its segment, click a layer to select it
+- Preview controls: play/pause, first/previous/next/last frame, loop, speed, markers, zoom (also Ctrl/⌘ + wheel) and a
+  checkerboard, light, dark or custom background. Rendered by the bundled dotLottie player (ThorVG, WebAssembly), without network access
 - The animation's color palette above the preview, with every use of a color; in JSON files clicking a color walks through its
   definitions
 - Gutter color swatches in Lottie JSON files with a color picker that writes the color back as Lottie components

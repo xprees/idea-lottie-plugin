@@ -19,6 +19,8 @@ data class LottieLayer(
     val inPoint: Double?,
     val outPoint: Double?,
     val parent: Long?,
+    /** `hd`: not rendered. */
+    val hidden: Boolean = false,
 ) {
     val typeName: String get() = LottieNames.layerType(type)
     val label: String get() = name?.takeIf { it.isNotBlank() } ?: "$typeName ${position + 1}"
@@ -63,6 +65,7 @@ object LottieModel {
                 inPoint = l["ip"].num(),
                 outPoint = l["op"].num(),
                 parent = (l["parent"] as? Number)?.toLong(),
+                hidden = l["hd"] == true,
             )
         }
         val markers = r["markers"].arr().orEmpty().mapNotNull { item ->

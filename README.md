@@ -9,8 +9,10 @@ Support for <b>Lottie</b> animations in IntelliJ IDEA, WebStorm, Rider and other
       and <i>Preview</i> layouts. The preview follows your edits and keeps the last valid render while the JSON is broken</li>
   <li><b>dotLottie</b> (<code>.lottie</code>, versions 1 and 2) opens in the preview, with pickers for its animations, <b>themes</b>
       and <b>state machines</b>, and a panel listing its manifest and files</li>
-  <li>Playback controls: play/pause, loop, speed, a frame scrubber, <b>markers</b> (play one segment), zoom, and a checkerboard,
-      light, dark or custom background</li>
+  <li>A <b>timeline</b> to scrub through the animation, with markers and per-layer in/out bars; frame stepping from the toolbar
+      and the keyboard</li>
+  <li>Playback controls: play/pause, loop, speed, <b>markers</b> (play one segment), zoom, and a checkerboard, light, dark or
+      custom background</li>
   <li>The animation's <b>color palette</b> above the preview; in JSON files, <b>color swatches</b> in the gutter open the color picker
       and write the new color back as Lottie components</li>
   <li>JSON smarts: validation and completion from the official <b>Lottie JSON Schema</b>, a <b>Structure view</b> of layers, shapes,
@@ -48,7 +50,8 @@ count, so a pasted animation becomes Lottie as soon as it looks like one (reopen
 | Preview | Rendered by the official [dotLottie player](https://github.com/LottieFiles/dotlottie-web) (ThorVG, WebAssembly) in the IDE's embedded Chromium. The player is bundled: nothing is downloaded, and the preview page may not load anything from the network (images or fonts referenced by URL don't show) |
 | Split editor | Lottie JSON opens as *Editor and Preview* (configurable); the layout chosen in a file is remembered for that file. Edits reach the preview 300 ms after you stop typing, keeping the current frame and playing state. Invalid JSON shows the parse error with its line and keeps the last valid render |
 | dotLottie | Preview only (the file is binary). Toolbar pickers for the animation, theme (`t/`, applied through Lottie slots) and state machine (`s/`, interactive in the preview; URLs a state machine tries to open are blocked). A details panel lists the format version, generator, animations with their initial and scoped themes, themes, state machines and every file with its size |
-| Playback | Play/pause, loop, speed (0.25×–4×), frame scrubber with frame and time, marker picker (plays the marker's segment; After Effects JSON marker names are shown by name), zoom to fit / actual size / in / out (also Ctrl/⌘ + wheel), background: checkerboard, light, dark or a custom color |
+| Playback | Play/pause, first/previous/next/last frame, loop, speed (0.25×–4×), marker picker (plays the marker's segment; After Effects JSON marker names are shown by name), zoom to fit / actual size / in / out (also Ctrl/⌘ + wheel), background: checkerboard, light, dark or a custom color |
+| Timeline | Under the preview: a frame ruler with the playhead, the markers as named segments and, with *Show Layers in Timeline*, a lane per root layer with its in/out range. Press and drag anywhere to scrub (playback pauses while you scrub and resumes when you let go; Alt for fractional frames), hover for the frame and time, wheel over the ruler to step. With the timeline focused: ←/→ one frame, Shift+←/→ ten, Home/End, Space to play or pause. Double-click a marker to play only its segment; click a layer to select it (in JSON files the caret jumps to it and the preview outlines it) |
 | Palette | The distinct colors of the animation (fills, strokes, gradient stops, solid layers, text, color effects and the color slots they use) as swatches above the preview, with their uses in the tooltip. In JSON files a click walks the caret through the places the color is defined; the context menu copies it as hex or as a Lottie array |
 | Color swatches | In JSON files, a gutter swatch next to every color value: `[r, g, b(, a)]` arrays of fills, strokes, text, color effects and slots, and the `"#rrggbb"` of solid layers. Clicking it opens the color picker; the new color is written back in the file's own form (0..1 components, or 0..255 for old exports; alpha kept when present). Positions, scales and other number triples get no swatch |
 | Schema | Validation and completion from the [Lottie Animation Community](https://lottie.github.io/lottie-spec/) JSON Schema (bundled), applied automatically to Lottie files |

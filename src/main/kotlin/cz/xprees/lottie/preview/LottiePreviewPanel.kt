@@ -60,7 +60,6 @@ import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JEditorPane
 import javax.swing.JPanel
-import javax.swing.JSlider
 import javax.swing.SwingConstants
 
 /**
@@ -145,11 +144,49 @@ class LottiePreviewPanel(
     private var paletteVisible = PropertiesComponent.getInstance().getBoolean(PALETTE_VISIBLE_KEY, true)
     private var detailsVisible = PropertiesComponent.getInstance().getBoolean(DETAILS_VISIBLE_KEY, true)
 
-    private val slider = JSlider(0, 0, 0).apply {
-        isOpaque = false
-        isFocusable = false
-    }
-    private var updatingSlider = false
+    private var playingBeforeScrub = false
+
+    /** When the user last moved the playhead; the page's frame echoes of earlier seeks are ignored for a moment after it. */
+    private var lastLocalSeek = 0L
+    private var timelineLayersVisible = PropertiesComponent.getInstance().getBoolean(TIMELINE_LAYERS_KEY, false)
+    private val timeline: Timeline = Timeline(object : Timeline.Callbacks {
+        override fun seek(frame: Double) = seekLocally(frame)
+
+        override fun scrubStarted() {
+            playingBeforeScrub = playing
+            if (playing) browser?.call("pause")
+        }
+
+        override fun scrubEnded() {
+            if (playingBeforeScrub) {
+                // resuming on purpose: follow the playback right away
+                lastLocalSeek = 0
+                playing = true
+                browser?.call("play")
+            }
+            playingBeforeScrub = false
+        }
+
+        override fun togglePlay() = togglePlayback()
+
+        override fun layerClicked(index: Int) {
+            timeline.selectedLayer = index
+            val pick = onPick
+            if (pick != null) {
+                pick(index)
+            } else {
+                // no code to jump to (.lottie): show the layer's first frame
+                timeline.layers.firstOrNull { it.index == index }?.let { seek(it.start) }
+            }
+            highlightLayer(index)
+        }
+
+        override fun markerDoubleClicked(name: String) {
+            marker = name
+            browser?.call("setMarker", name)
+            toolbar.updateActionsAsync()
+        }
+    }).apply { showLayers = timelineLayersVisible }
     private val frameLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val infoLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
@@ -187,11 +224,6 @@ class LottiePreviewPanel(
             add(splitter, BorderLayout.CENTER)
         }
         add(createScrubber(), BorderLayout.SOUTH)
-
-        slider.addChangeListener {
-            if (updatingSlider) return@addChangeListener
-            browser?.call("seek", slider.value.toDouble())
-        }
 
         if (document != null) {
             document.addDocumentListener(object : DocumentListener {
@@ -273,6 +305,7 @@ class LottiePreviewPanel(
         }
         showError(null)
         info = prepared.info
+        timeline.layers = timelineLayers(prepared.info)
         palette = prepared.palette
         paletteStrip.setPalette(palette)
         val firstLoad = !loadedOnce
@@ -340,27 +373,29 @@ class LottiePreviewPanel(
                 animationWidth = (message["width"] as? Number)?.toDouble() ?: 0.0
                 animationHeight = (message["height"] as? Number)?.toDouble() ?: 0.0
                 @Suppress("UNCHECKED_CAST")
-                markers = (message["markers"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { m ->
+                val playerMarkers = (message["markers"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { m ->
                     val name = m["name"] as? String ?: return@mapNotNull null
-                    name to (m["label"] as? String ?: name)
+                    Timeline.Marker(name, m["label"] as? String ?: name, (m["start"] as? Number)?.toDouble() ?: 0.0, (m["end"] as? Number)?.toDouble() ?: 0.0)
                 }
+                markers = playerMarkers.map { it.name to it.label }
+                timeline.markers = playerMarkers
                 if (marker != null && markers.none { it.first == marker }) marker = null
                 playing = message["playing"] == true
                 (message["activeAnimationId"] as? String)?.let { animationId = it }
                 if (!isJson) themeId = message["activeThemeId"] as? String
-                updatingSlider = true
-                slider.maximum = (totalFrames - 1).toInt().coerceAtLeast(0)
-                updatingSlider = false
+                timeline.lastFrame = (totalFrames - 1).coerceAtLeast(0.0)
+                timeline.frameRate = frameRate()
                 showError(null)
                 toolbar.updateActionsAsync()
                 updateLabels()
             }
             "frame" -> {
-                frame = (message["frame"] as? Number)?.toDouble() ?: 0.0
+                // A local seek pauses the player: messages arriving right after it are echoes of earlier seeks or of the playback
+                // before the pause, and would undo a quick series of steps (arrow keys, dragging)
+                if (System.currentTimeMillis() - lastLocalSeek < LOCAL_SEEK_GRACE_MS) return
                 playing = message["playing"] == true
-                updatingSlider = true
-                slider.value = frame.toInt()
-                updatingSlider = false
+                frame = (message["frame"] as? Number)?.toDouble() ?: 0.0
+                timeline.frame = frame
                 updateLabels()
             }
             "playing" -> {
@@ -377,8 +412,46 @@ class LottiePreviewPanel(
         }
     }
 
+    private fun frameRate(): Double = info?.frameRate?.takeIf { it > 0 } ?: if (durationSeconds > 0) totalFrames / durationSeconds else 0.0
+
+    /** Root layers as timeline lanes, in player frames (relative to the animation's in point). */
+    private fun timelineLayers(info: LottieInfo?): List<Timeline.Layer> {
+        if (info == null) return emptyList()
+        val last = info.frames
+        return info.layers.map { layer ->
+            Timeline.Layer(
+                index = layer.position,
+                label = layer.label,
+                type = layer.typeName,
+                start = ((layer.inPoint ?: info.inPoint) - info.inPoint).coerceIn(0.0, last),
+                end = ((layer.outPoint ?: info.outPoint) - info.inPoint).coerceIn(0.0, last),
+                hidden = layer.hidden,
+            )
+        }
+    }
+
+    /** Moves the playhead to [target] right away (timeline, labels) and seeks the player, which pauses it. */
+    private fun seekLocally(target: Double) {
+        lastLocalSeek = System.currentTimeMillis()
+        if (playing) {
+            playing = false
+            toolbar.updateActionsAsync()
+        }
+        frame = target
+        timeline.frame = target
+        updateLabels()
+        browser?.call("seek", target)
+    }
+
+    private fun togglePlayback() {
+        if (!playing) lastLocalSeek = 0
+        browser?.call(if (playing) "pause" else "play")
+        playing = !playing
+        toolbar.updateActionsAsync()
+    }
+
     private fun updateLabels() {
-        val fps = info?.frameRate?.takeIf { it > 0 } ?: if (durationSeconds > 0) totalFrames / durationSeconds else 0.0
+        val fps = frameRate()
         val time = if (fps > 0) frame / fps else 0.0
         frameLabel.text = LottieBundle.message(
             "preview.frame",
@@ -404,12 +477,13 @@ class LottiePreviewPanel(
 
     /** Outlines root layer [index] in the preview (null clears it). */
     fun highlightLayer(index: Int?) {
+        timeline.selectedLayer = index
         if (settings.previewSync) browser?.call("highlightLayer", index)
     }
 
     /** Pauses and shows [frame] (relative to the animation's in point). */
     fun seek(frame: Double) {
-        browser?.call("seek", frame.coerceIn(0.0, (totalFrames - 1).coerceAtLeast(0.0)))
+        seekLocally(frame.coerceIn(0.0, (totalFrames - 1).coerceAtLeast(0.0)))
     }
 
     /** [seek], but only while paused, so moving the caret doesn't stop a playing animation. */
@@ -428,15 +502,22 @@ class LottiePreviewPanel(
         }, GridBagConstraints())
     }
 
-    private fun createScrubber(): JComponent = JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
-        border = JBUI.Borders.compound(JBUI.Borders.customLineTop(JBColor.border()), JBUI.Borders.empty(2, 8))
-        add(frameLabel, BorderLayout.WEST)
-        add(slider, BorderLayout.CENTER)
-        add(infoLabel, BorderLayout.EAST)
+    private fun createScrubber(): JComponent = JPanel(BorderLayout()).apply {
+        border = JBUI.Borders.customLineTop(JBColor.border())
+        add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
+            border = JBUI.Borders.empty(2, 8)
+            add(frameLabel, BorderLayout.WEST)
+            add(infoLabel, BorderLayout.EAST)
+        }, BorderLayout.NORTH)
+        add(timeline.component, BorderLayout.CENTER)
     }
 
     private fun createActions(): DefaultActionGroup = DefaultActionGroup().apply {
+        add(FrameStepAction(LottieBundle.message("action.frame.first"), AllIcons.Actions.Play_first) { 0.0 })
+        add(FrameStepAction(LottieBundle.message("action.frame.previous"), AllIcons.Actions.Play_back) { Math.round(frame) - 1.0 })
         add(PlayPauseAction())
+        add(FrameStepAction(LottieBundle.message("action.frame.next"), AllIcons.Actions.Play_forward) { Math.round(frame) + 1.0 })
+        add(FrameStepAction(LottieBundle.message("action.frame.last"), AllIcons.Actions.Play_last) { totalFrames - 1 })
         add(LoopAction())
         add(SpeedAction())
         add(MarkerAction())
@@ -454,6 +535,7 @@ class LottiePreviewPanel(
         }
         add(Separator.getInstance())
         add(PaletteToggleAction())
+        add(TimelineLayersToggleAction())
         if (isJson) {
             add(PackDotLottieAction())
         } else {
@@ -473,9 +555,25 @@ class LottiePreviewPanel(
             e.presentation.isEnabled = browser != null
         }
 
-        override fun actionPerformed(e: AnActionEvent) {
-            browser?.call(if (playing) "pause" else "play")
-            playing = !playing
+        override fun actionPerformed(e: AnActionEvent) = togglePlayback()
+    }
+
+    /** Pauses and jumps to the frame [target] computes (clamped to the animation). */
+    private inner class FrameStepAction(text: String, icon: javax.swing.Icon, private val target: () -> Double) : PreviewAction(text, icon) {
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = browser != null && totalFrames > 0
+        }
+
+        override fun actionPerformed(e: AnActionEvent) = seekLocally(target().coerceIn(0.0, (totalFrames - 1).coerceAtLeast(0.0)))
+    }
+
+    private inner class TimelineLayersToggleAction : DumbAwareToggleAction(LottieBundle.message("action.timeline.layers"), null, AllIcons.Actions.ShowAsTree) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun isSelected(e: AnActionEvent) = timelineLayersVisible
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            timelineLayersVisible = state
+            PropertiesComponent.getInstance().setValue(TIMELINE_LAYERS_KEY, state, false)
+            timeline.showLayers = state
         }
     }
 
@@ -638,6 +736,8 @@ class LottiePreviewPanel(
         private const val UPDATE_DELAY_MS = 300
         private const val PALETTE_VISIBLE_KEY = "cz.xprees.lottie.palette.visible"
         private const val DETAILS_VISIBLE_KEY = "cz.xprees.lottie.details.visible"
+        private const val TIMELINE_LAYERS_KEY = "cz.xprees.lottie.timeline.layers"
+        private const val LOCAL_SEEK_GRACE_MS = 400L
     }
 }
 
