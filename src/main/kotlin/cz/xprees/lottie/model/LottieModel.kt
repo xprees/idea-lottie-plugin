@@ -26,7 +26,11 @@ data class LottieLayer(
     val label: String get() = name?.takeIf { it.isNotBlank() } ?: "$typeName ${position + 1}"
 }
 
-data class LottieMarker(val name: String, val start: Double, val duration: Double) {
+/**
+ * A marker: [name] is the display name, [comment] the raw `cm` value (the name runtimes look markers up by; After Effects exports
+ * store it as JSON like `{"name":"intro"}`), [index] its position in the root `markers` array.
+ */
+data class LottieMarker(val name: String, val start: Double, val duration: Double, val comment: String = name, val index: Int = 0) {
     val end get() = start + duration
 }
 
@@ -68,10 +72,10 @@ object LottieModel {
                 hidden = l["hd"] == true,
             )
         }
-        val markers = r["markers"].arr().orEmpty().mapNotNull { item ->
-            val m = item.obj() ?: return@mapNotNull null
-            val start = m["tm"].num() ?: return@mapNotNull null
-            MarkerNames.parse(m["cm"])?.let { LottieMarker(it, start, m["dr"].num() ?: 0.0) }
+        val markers = r["markers"].arr().orEmpty().mapIndexedNotNull { index, item ->
+            val m = item.obj() ?: return@mapIndexedNotNull null
+            val start = m["tm"].num() ?: return@mapIndexedNotNull null
+            MarkerNames.parse(m["cm"])?.let { LottieMarker(it, start, m["dr"].num() ?: 0.0, m["cm"].str() ?: it, index) }
         }
         return LottieInfo(
             version = r["v"].str(),
@@ -89,12 +93,21 @@ object LottieModel {
     }
 }
 
-internal object MarkerNames {
+object MarkerNames {
     /** Marker comments are plain names, or (After Effects + Bodymovin) a JSON string like `{"name":"intro"}`. */
     fun parse(cm: Any?): String? {
         val s = cm.str() ?: return null
         if (s.startsWith("{")) MiniJson.parseOrNull(s).obj()?.get("name").str()?.let { return it }
         return s.ifBlank { null }
+    }
+
+    /** [comment] with its name replaced by [name], keeping the After Effects JSON form when it has it. */
+    fun rename(comment: String?, name: String): String {
+        if (comment != null && comment.trimStart().startsWith("{")) {
+            val obj = MiniJson.parseOrNull(comment).obj()
+            if (obj != null && obj["name"] is String) return MiniJson.write(LinkedHashMap(obj).apply { put("name", name) })
+        }
+        return name
     }
 }
 

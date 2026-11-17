@@ -1,5 +1,8 @@
 package cz.xprees.lottie.preview
 
+import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.ui.JBMenuItem
+import com.intellij.openapi.ui.JBPopupMenu
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
@@ -14,6 +17,7 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import java.awt.datatransfer.StringSelection
 import java.awt.event.ActionEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -36,6 +40,10 @@ import javax.swing.SwingConstants
  * fractional frames. With the timeline focused, ←/→ step one frame (Shift: ten), Home/End jump to the ends and Space plays or
  * pauses. The mouse wheel over the ruler steps frames. Double-clicking a marker plays only its segment; clicking a layer (its name
  * or its bar) selects it.
+ *
+ * With [editableMarkers], the markers lane is always shown: its context menu adds, renames and deletes markers and moves their
+ * start or end to the playhead, and dragging a marker's edge changes its range. The callbacks write the change; the timeline only
+ * shows the result once [markers] is updated.
  */
 internal class Timeline(private val callbacks: Callbacks) {
 
@@ -45,11 +53,18 @@ internal class Timeline(private val callbacks: Callbacks) {
         fun scrubEnded()
         fun togglePlay()
         fun layerClicked(index: Int)
-        fun markerDoubleClicked(name: String)
+        fun playMarker(marker: Marker)
+        fun addMarker(frame: Double) {}
+        fun renameMarker(marker: Marker) {}
+        fun deleteMarker(marker: Marker) {}
+        fun changeMarker(marker: Marker, start: Double, end: Double) {}
     }
 
-    /** A marker in player frames. [name] is what the player knows it by, [label] what is shown. */
-    data class Marker(val name: String, val label: String, val start: Double, val end: Double)
+    /**
+     * A marker in player frames. [name] is what the player knows it by, [label] what is shown, [index] its position in the
+     * document's `markers` array when it can be edited.
+     */
+    data class Marker(val name: String, val label: String, val start: Double, val end: Double, val index: Int? = null)
 
     /** A root layer and its visible range in player frames. */
     data class Layer(val index: Int, val label: String, val type: String, val start: Double, val end: Double, val hidden: Boolean)
@@ -89,11 +104,19 @@ internal class Timeline(private val callbacks: Callbacks) {
             field = value
             refresh()
         }
+    var editableMarkers = false
+        set(value) {
+            if (field == value) return
+            field = value
+            refresh()
+        }
+
+    private val showMarkersLane get() = markers.isNotEmpty() || editableMarkers
 
     private val rulerHeight get() = JBUI.scale(22)
     private val rowHeight get() = JBUI.scale(18)
     private val maxVisibleRows = 6
-    private val labelWidth get() = if (markers.isNotEmpty() || (showLayers && layers.isNotEmpty())) JBUI.scale(120) else JBUI.scale(8)
+    private val labelWidth get() = if (showMarkersLane || (showLayers && layers.isNotEmpty())) JBUI.scale(120) else JBUI.scale(8)
     private val rightPadding get() = JBUI.scale(10)
     private var hoverX: Int? = null
 
@@ -143,12 +166,17 @@ internal class Timeline(private val callbacks: Callbacks) {
             val mouse = object : MouseAdapter() {
                 override fun mousePressed(e: MouseEvent) {
                     requestFocusInWindow()
+                    if (e.isPopupTrigger) {
+                        popup(e)
+                        return
+                    }
                     if (e.button != MouseEvent.BUTTON1) return
                     if (e.x < labelWidth) {
                         labelPressed(e)
                         return
                     }
                     if (e.clickCount == 2 && doubleClicked(e)) return
+                    if (pressed(e)) return
                     scrubbing = true
                     callbacks.scrubStarted()
                     seekTo(e)
@@ -156,11 +184,16 @@ internal class Timeline(private val callbacks: Callbacks) {
 
                 override fun mouseDragged(e: MouseEvent) {
                     hoverX = e.x
-                    if (scrubbing) seekTo(e)
+                    if (!dragged(e) && scrubbing) seekTo(e)
                     repaintAll()
                 }
 
                 override fun mouseReleased(e: MouseEvent) {
+                    if (e.isPopupTrigger) {
+                        popup(e)
+                        return
+                    }
+                    if (released(e)) return
                     if (!scrubbing) return
                     scrubbing = false
                     callbacks.scrubEnded()
@@ -168,6 +201,7 @@ internal class Timeline(private val callbacks: Callbacks) {
 
                 override fun mouseMoved(e: MouseEvent) {
                     hoverX = e.x.takeIf { it >= labelWidth }
+                    cursor = cursorAt(e)
                     repaintAll()
                 }
 
@@ -203,6 +237,17 @@ internal class Timeline(private val callbacks: Callbacks) {
 
         open fun doubleClicked(e: MouseEvent): Boolean = false
 
+        /** A left press the view handles itself instead of scrubbing. */
+        open fun pressed(e: MouseEvent): Boolean = false
+
+        open fun dragged(e: MouseEvent): Boolean = false
+
+        open fun released(e: MouseEvent): Boolean = false
+
+        open fun popup(e: MouseEvent) {}
+
+        open fun cursorAt(e: MouseEvent): Cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+
         private fun repaintAll() {
             ruler.repaint()
             tracks.repaint()
@@ -210,6 +255,8 @@ internal class Timeline(private val callbacks: Callbacks) {
 
         override fun getToolTipText(event: MouseEvent): String? =
             if (event.x >= labelWidth && lastFrame > 0) timeText(scale(width).frame(event.x, exact = event.isAltDown)) else null
+
+        protected fun repaintTimeline() = repaintAll()
 
         protected fun Graphics2D.playhead(s: TimelineScale, top: Int, bottom: Int) {
             hoverX?.let { hx ->
@@ -232,15 +279,99 @@ internal class Timeline(private val callbacks: Callbacks) {
 
     /** The frame ruler with tick labels, the markers lane and the playhead handle. */
     private inner class RulerView : TimelineView() {
-        override fun getPreferredSize() = Dimension(JBUI.scale(200), rulerHeight + if (markers.isNotEmpty()) rowHeight else 0)
+        override fun getPreferredSize() = Dimension(JBUI.scale(200), rulerHeight + if (showMarkersLane) rowHeight else 0)
+
+        /** The marker being resized by dragging one of its edges, with its draft range. */
+        private var resizing: Marker? = null
+        private var resizingEnd = false
+        private var draftStart = 0.0
+        private var draftEnd = 0.0
+        private val edgeSlop get() = JBUI.scale(4)
+
+        private fun markerAt(e: MouseEvent): Marker? {
+            if (e.y < rulerHeight) return null
+            val s = scale(width)
+            return markers.filter { e.x >= s.x(it.start) - edgeSlop && e.x <= maxOf(s.x(it.end), s.x(it.start) + JBUI.scale(8)) + edgeSlop }
+                .minByOrNull { it.end - it.start }
+        }
+
+        /** An editable marker whose end (true) or start (false) edge is under the mouse. */
+        private fun edgeAt(e: MouseEvent): Pair<Marker, Boolean>? {
+            if (!editableMarkers || e.y < rulerHeight) return null
+            val s = scale(width)
+            for (m in markers.filter { it.index != null }) {
+                if (kotlin.math.abs(e.x - s.x(m.end)) <= edgeSlop) return m to true
+                if (kotlin.math.abs(e.x - s.x(m.start)) <= edgeSlop) return m to false
+            }
+            return null
+        }
+
+        override fun cursorAt(e: MouseEvent): Cursor =
+            if (edgeAt(e) != null) Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR) else super.cursorAt(e)
 
         override fun doubleClicked(e: MouseEvent): Boolean {
-            if (e.y < rulerHeight) return false
-            val f = scale(width).frame(e.x, exact = true)
-            val marker = markers.firstOrNull { f >= it.start && f <= it.end } ?: return false
-            callbacks.markerDoubleClicked(marker.name)
+            val marker = markerAt(e) ?: return false
+            callbacks.playMarker(marker)
             return true
         }
+
+        override fun pressed(e: MouseEvent): Boolean {
+            val (marker, end) = edgeAt(e) ?: return false
+            resizing = marker
+            resizingEnd = end
+            draftStart = marker.start
+            draftEnd = marker.end
+            return true
+        }
+
+        override fun dragged(e: MouseEvent): Boolean {
+            if (resizing == null) return false
+            val f = scale(width).frame(e.x, exact = e.isAltDown)
+            if (resizingEnd) draftEnd = f.coerceAtLeast(draftStart) else draftStart = f.coerceAtMost(draftEnd)
+            return true
+        }
+
+        override fun released(e: MouseEvent): Boolean {
+            val marker = resizing ?: return false
+            resizing = null
+            if (draftStart != marker.start || draftEnd != marker.end) callbacks.changeMarker(marker, draftStart, draftEnd)
+            repaintTimeline()
+            return true
+        }
+
+        override fun popup(e: MouseEvent) {
+            val menu = JBPopupMenu()
+            fun item(text: String, run: () -> Unit) = menu.add(JBMenuItem(text).apply { addActionListener { run() } })
+            val atMouse = if (e.x >= labelWidth) scale(width).frame(e.x) else Math.round(frame).toDouble()
+            val playhead = Math.round(frame).toDouble()
+            val marker = markerAt(e)
+            if (marker != null) {
+                item(LottieBundle.message("timeline.marker.play", marker.label)) { callbacks.playMarker(marker) }
+                item(LottieBundle.message("timeline.marker.copy", marker.label)) {
+                    CopyPasteManager.getInstance().setContents(StringSelection(marker.label))
+                }
+                if (marker.index != null && editableMarkers) {
+                    item(LottieBundle.message("timeline.marker.rename")) { callbacks.renameMarker(marker) }
+                    if (playhead <= marker.end) {
+                        item(LottieBundle.message("timeline.marker.start.here", formatFrame(playhead))) { callbacks.changeMarker(marker, playhead, marker.end) }
+                    }
+                    if (playhead >= marker.start) {
+                        item(LottieBundle.message("timeline.marker.end.here", formatFrame(playhead))) { callbacks.changeMarker(marker, marker.start, playhead) }
+                    }
+                    menu.addSeparator()
+                    item(LottieBundle.message("timeline.marker.delete", marker.label)) { callbacks.deleteMarker(marker) }
+                }
+            }
+            if (editableMarkers) {
+                if (menu.componentCount > 0) menu.addSeparator()
+                item(LottieBundle.message("timeline.marker.add.at", formatFrame(atMouse))) { callbacks.addMarker(atMouse) }
+                if (atMouse != playhead) item(LottieBundle.message("timeline.marker.add.playhead", formatFrame(playhead))) { callbacks.addMarker(playhead) }
+            }
+            if (menu.componentCount > 0) menu.show(this, e.x, e.y)
+        }
+
+        /** [m] with the draft range while its edge is being dragged. */
+        private fun shown(m: Marker) = if (resizing != null && resizing == m) m.copy(start = draftStart, end = draftEnd) else m
 
         init {
             addMouseWheelListener { e: MouseWheelEvent ->
@@ -292,22 +423,44 @@ internal class Timeline(private val callbacks: Callbacks) {
                 g2.drawLine(0, rulerHeight - 1, width, rulerHeight - 1)
 
                 // markers lane
-                if (markers.isNotEmpty()) {
+                if (showMarkersLane) {
                     val top = rulerHeight
                     g2.color = muted
                     g2.drawString(LottieBundle.message("timeline.markers"), JBUI.scale(8), top + (rowHeight + fm.ascent - fm.descent) / 2)
-                    markers.forEachIndexed { i, m ->
+                    if (markers.isEmpty()) {
+                        g2.drawString(LottieBundle.message("timeline.markers.empty"), s.left + JBUI.scale(4), top + (rowHeight + fm.ascent - fm.descent) / 2)
+                    }
+                    val shownMarkers = markers.map(::shown)
+                    val starts = shownMarkers.map { s.x(it.start) }.sorted()
+                    shownMarkers.forEachIndexed { i, m ->
                         val x1 = s.x(m.start)
-                        val x2 = s.x(m.end).coerceAtLeast(x1 + JBUI.scale(3))
+                        val x2 = s.x(m.end)
                         val base = markerColors[i % markerColors.size]
-                        g2.color = Color(base.red, base.green, base.blue, 70)
-                        g2.fillRoundRect(x1, top + JBUI.scale(2), x2 - x1, rowHeight - JBUI.scale(4), JBUI.scale(6), JBUI.scale(6))
-                        g2.color = base
-                        g2.fillRect(x1, top + JBUI.scale(2), JBUI.scale(2), rowHeight - JBUI.scale(4))
-                        g2.color = UIUtil.getLabelForeground()
+                        val baseline = top + (rowHeight + fm.ascent - fm.descent) / 2
                         val clip = g2.clip
-                        g2.clipRect(x1, top, x2 - x1, rowHeight)
-                        g2.drawString(m.label, x1 + JBUI.scale(5), top + (rowHeight + fm.ascent - fm.descent) / 2)
+                        if (x2 - x1 < JBUI.scale(8)) {
+                            // a point marker (an event at one frame): a flag, labelled up to the next marker
+                            g2.color = base
+                            g2.fillRect(x1, top + JBUI.scale(1), JBUI.scale(2), rowHeight - JBUI.scale(2))
+                            val flag = java.awt.Polygon(
+                                intArrayOf(x1 + JBUI.scale(2), x1 + JBUI.scale(8), x1 + JBUI.scale(2)),
+                                intArrayOf(top + JBUI.scale(2), top + JBUI.scale(5), top + JBUI.scale(8)),
+                                3,
+                            )
+                            g2.fillPolygon(flag)
+                            val limit = starts.firstOrNull { it > x1 } ?: width
+                            g2.clipRect(x1, top, (limit - x1 - JBUI.scale(2)).coerceAtLeast(0), rowHeight)
+                            g2.color = UIUtil.getLabelForeground()
+                            g2.drawString(m.label, x1 + JBUI.scale(10), baseline)
+                        } else {
+                            g2.color = Color(base.red, base.green, base.blue, 70)
+                            g2.fillRoundRect(x1, top + JBUI.scale(2), x2 - x1, rowHeight - JBUI.scale(4), JBUI.scale(6), JBUI.scale(6))
+                            g2.color = base
+                            g2.fillRect(x1, top + JBUI.scale(2), JBUI.scale(2), rowHeight - JBUI.scale(4))
+                            g2.clipRect(x1, top, x2 - x1, rowHeight)
+                            g2.color = UIUtil.getLabelForeground()
+                            g2.drawString(m.label, x1 + JBUI.scale(5), baseline)
+                        }
                         g2.clip = clip
                     }
                 }

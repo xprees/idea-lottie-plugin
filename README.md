@@ -9,8 +9,10 @@ Support for <b>Lottie</b> animations in IntelliJ IDEA, WebStorm, Rider and other
       and <i>Preview</i> layouts. The preview follows your edits and keeps the last valid render while the JSON is broken</li>
   <li><b>dotLottie</b> (<code>.lottie</code>, versions 1 and 2) opens in the preview, with pickers for its animations, <b>themes</b>
       and <b>state machines</b>, and a panel listing its manifest and files</li>
-  <li>A <b>timeline</b> to scrub through the animation, with markers and per-layer in/out bars; frame stepping from the toolbar
-      and the keyboard</li>
+  <li>A <b>timeline</b> to scrub through the animation, with playback controls (play/pause, frame stepping, loop, speed), markers
+      and per-layer in/out bars</li>
+  <li><b>Markers</b>, the named moments and segments your code plays or reacts to, are added, renamed, moved and deleted right on
+      the timeline</li>
   <li>Playback controls: play/pause, loop, speed, <b>markers</b> (play one segment), zoom, and a checkerboard, light, dark or
       custom background</li>
   <li>The animation's <b>color palette</b> above the preview; in JSON files, <b>color swatches</b> in the gutter open the color picker
@@ -50,8 +52,9 @@ count, so a pasted animation becomes Lottie as soon as it looks like one (reopen
 | Preview | Rendered by the official [dotLottie player](https://github.com/LottieFiles/dotlottie-web) (ThorVG, WebAssembly) in the IDE's embedded Chromium. The player is bundled: nothing is downloaded, and the preview page may not load anything from the network (images or fonts referenced by URL don't show) |
 | Split editor | Lottie JSON opens as *Editor and Preview* (configurable); the layout chosen in a file is remembered for that file. Edits reach the preview 300 ms after you stop typing, keeping the current frame and playing state. Invalid JSON shows the parse error with its line and keeps the last valid render |
 | dotLottie | Preview only (the file is binary). Toolbar pickers for the animation, theme (`t/`, applied through Lottie slots) and state machine (`s/`, interactive in the preview; URLs a state machine tries to open are blocked). A details panel lists the format version, generator, animations with their initial and scoped themes, themes, state machines and every file with its size |
-| Playback | Play/pause, first/previous/next/last frame, loop, speed (0.25×–4×), marker picker (plays the marker's segment; After Effects JSON marker names are shown by name), zoom to fit / actual size / in / out (also Ctrl/⌘ + wheel), background: checkerboard, light, dark or a custom color |
-| Timeline | Under the preview: a frame ruler with the playhead, the markers as named segments and, with *Show Layers in Timeline*, a lane per root layer with its in/out range. Press and drag anywhere to scrub (playback pauses while you scrub and resumes when you let go; Alt for fractional frames), hover for the frame and time, wheel over the ruler to step. With the timeline focused: ←/→ one frame, Shift+←/→ ten, Home/End, Space to play or pause. Double-click a marker to play only its segment; click a layer to select it (in JSON files the caret jumps to it and the preview outlines it) |
+| Playback | In the timeline header: first/previous/play-pause/next/last frame, loop and speed (0.25×–4×). In the toolbar: marker picker (plays the marker's segment; After Effects JSON marker names are shown by name), zoom to fit / actual size / in / out (also Ctrl/⌘ + wheel), background: checkerboard, light, dark or a custom color |
+| Timeline | Under the preview: a frame ruler with the playhead, the markers (segments as bars, single-frame markers as flags) and, with *Show Layers in Timeline*, a lane per root layer with its in/out range. Press and drag anywhere to scrub (playback pauses while you scrub and resumes when you let go; Alt for fractional frames), hover for the frame and time, wheel over the ruler to step. With the timeline focused: ←/→ one frame, Shift+←/→ ten, Home/End, Space to play or pause. Double-click a marker to play only its segment; click a layer to select it (in JSON files the caret jumps to it and the preview outlines it) |
+| Markers | In JSON files markers are edited on the timeline: right-click the markers lane to add a marker at that frame or at the playhead, and a marker to rename it, move its start or end to the playhead or delete it; drag a marker's edge to change its range (a single-frame marker becomes a segment). *+* in the timeline header adds one at the playhead. Each edit is one undoable change to the `markers` array; marker names must be unique. In `.lottie` files markers are read-only (extract the JSON to edit them) |
 | Palette | The distinct colors of the animation (fills, strokes, gradient stops, solid layers, text, color effects and the color slots they use) as swatches above the preview, with their uses in the tooltip. In JSON files a click walks the caret through the places the color is defined; the context menu copies it as hex or as a Lottie array |
 | Color swatches | In JSON files, a gutter swatch next to every color value: `[r, g, b(, a)]` arrays of fills, strokes, text, color effects and slots, and the `"#rrggbb"` of solid layers. Clicking it opens the color picker; the new color is written back in the file's own form (0..1 components, or 0..255 for old exports; alpha kept when present). Positions, scales and other number triples get no swatch |
 | Schema | Validation and completion from the [Lottie Animation Community](https://lottie.github.io/lottie-spec/) JSON Schema (bundled), applied automatically to Lottie files |
@@ -59,6 +62,26 @@ count, so a pasted animation becomes Lottie as soon as it looks like one (reopen
 | Inlay hints | Layer and shape types (`"ty": 4` → Shape, `"ty": "fl"` → Fill), blend and matte modes, parent layer names, in/out/start points and keyframe times in seconds, and the layer's type and name in front of each layer object, visible when it is folded. Toggle in the settings or *Settings › Editor › Inlay Hints › Values › Lottie* |
 | Sync | The root layer at the caret (or selected in the Structure view) is outlined in the preview, following it frame by frame; a caret in a keyframe shows its frame while paused; clicking the preview moves the caret to the topmost layer under the mouse |
 | Actions | *Extract Lottie JSON* (`.lottie` context menu, editor tab menu, preview toolbar): writes the animation next to the archive with its images embedded as data URIs, and opens it. *Pack as dotLottie* (Lottie JSON): creates a dotLottie 2.0 file with the animation and the images it embeds or references next to it (stored under `i/`), and opens it. In Rider they are in the Solution Explorer menu |
+
+## Markers as events for your code
+
+Lottie has no separate event track: **markers** are how an animation names moments and segments for the code that plays it. A
+marker is an entry in the root `markers` array, `{"cm": "hit", "tm": 15, "dr": 10}`: a name, a start frame and a duration (0 for a
+single moment). Add them on the timeline, then refer to them by name in code, for example:
+
+| Runtime | Play a marker's segment |
+|---|---|
+| dotLottie web (`@lottiefiles/dotlottie-web`) | `dotLottie.setMarker('hit'); dotLottie.play();` |
+| lottie-web | `animation.goToAndPlay('hit', true);` |
+| Lottie Android | `animationView.setMinAndMaxFrame("hit")` |
+| Lottie Compose | `LottieClipSpec.Marker("hit")` as the `clipSpec` of `animateLottieCompositionAsState` |
+| Lottie iOS | `animationView.play(fromMarker: "hit", toMarker: "outro")` |
+
+To *react* when playback reaches a marker, compare the current frame with the marker's start in the player's frame callback (for
+example dotLottie web's `frame` event, which carries `currentFrame`, together with `dotLottie.markers()`), or play the marker's segment
+and wait for the `complete` event. The names you give markers are the names your code uses, so the timeline refuses duplicates.
+(Interactive dotLottie files can also carry state machines with their own inputs and events; those are shown and run in the preview but
+not edited.)
 
 ## Settings
 

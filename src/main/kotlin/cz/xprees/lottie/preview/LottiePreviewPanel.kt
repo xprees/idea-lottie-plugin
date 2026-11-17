@@ -43,6 +43,9 @@ import cz.xprees.lottie.LottieBundle
 import cz.xprees.lottie.actions.ExtractAnimationAction
 import cz.xprees.lottie.actions.PackDotLottieAction
 import cz.xprees.lottie.dotlottie.DotLottieArchive
+import cz.xprees.lottie.editor.LottieMarkerEditor
+import com.intellij.openapi.ui.InputValidatorEx
+import com.intellij.openapi.ui.Messages
 import cz.xprees.lottie.json.MiniJson
 import cz.xprees.lottie.model.LottieInfo
 import cz.xprees.lottie.model.LottieModel
@@ -53,6 +56,7 @@ import cz.xprees.lottie.settings.LottieSettings
 import cz.xprees.lottie.settings.LottieSettings.Background
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.Dimension
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.util.Locale
@@ -181,12 +185,60 @@ class LottiePreviewPanel(
             highlightLayer(index)
         }
 
-        override fun markerDoubleClicked(name: String) {
-            marker = name
-            browser?.call("setMarker", name)
-            toolbar.updateActionsAsync()
+        override fun playMarker(marker: Timeline.Marker) {
+            this@LottiePreviewPanel.marker = marker.name
+            browser?.call("setMarker", marker.name)
+            updateToolbars()
+        }
+
+        override fun addMarker(frame: Double) {
+            val editor = markerEditor ?: return
+            val name = askMarkerName(LottieBundle.message("marker.add.title"), defaultMarkerName(), null) ?: return
+            editor.add(name, frame + inPoint)
+        }
+
+        override fun renameMarker(marker: Timeline.Marker) {
+            val index = marker.index ?: return
+            val name = askMarkerName(LottieBundle.message("marker.rename.title"), marker.label, marker) ?: return
+            if (name != marker.label) markerEditor?.rename(index, name)
+        }
+
+        override fun deleteMarker(marker: Timeline.Marker) {
+            marker.index?.let { markerEditor?.delete(it) }
+        }
+
+        override fun changeMarker(marker: Timeline.Marker, start: Double, end: Double) {
+            val index = marker.index ?: return
+            markerEditor?.setRange(index, start + inPoint, end - start)
         }
     }).apply { showLayers = timelineLayersVisible }
+    /** Writes marker edits made on the timeline into the JSON document (null for .lottie files, which are read-only). */
+    private val markerEditor: LottieMarkerEditor? = document?.let { LottieMarkerEditor(project, it) }
+
+    private fun defaultMarkerName(): String {
+        val taken = timeline.markers.map { it.label }.toSet()
+        return generateSequence(timeline.markers.size + 1) { it + 1 }.map { "marker_$it" }.first { it !in taken }
+    }
+
+    /** Asks for a marker name: not blank, and not the name of another marker (players look markers up by name). */
+    private fun askMarkerName(title: String, initial: String, editing: Timeline.Marker?): String? {
+        val others = timeline.markers.filter { it != editing }.map { it.label }.toSet()
+        return Messages.showInputDialog(project, LottieBundle.message("marker.name.prompt"), title, null, initial, object : InputValidatorEx {
+            override fun getErrorText(inputString: String): String? = when {
+                inputString.isBlank() -> LottieBundle.message("marker.name.blank")
+                inputString.trim() in others -> LottieBundle.message("marker.name.duplicate", inputString.trim())
+                else -> null
+            }
+        })?.trim()
+    }
+
+    private lateinit var timelineToolbar: ActionToolbar
+
+    private fun updateToolbars() {
+        toolbar.updateActionsAsync()
+        if (::timelineToolbar.isInitialized) timelineToolbar.updateActionsAsync()
+    }
+
     private val frameLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val infoLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
@@ -306,6 +358,13 @@ class LottiePreviewPanel(
         showError(null)
         info = prepared.info
         timeline.layers = timelineLayers(prepared.info)
+        if (isJson) {
+            val ip = prepared.info?.inPoint ?: 0.0
+            timeline.markers = prepared.info?.markers.orEmpty().map {
+                Timeline.Marker(it.comment, it.name, it.start - ip, it.end - ip, it.index)
+            }
+            timeline.editableMarkers = document?.isWritable == true
+        }
         palette = prepared.palette
         paletteStrip.setPalette(palette)
         val firstLoad = !loadedOnce
@@ -335,7 +394,7 @@ class LottiePreviewPanel(
             ),
         )
         if (firstLoad && stateMachineId != null) browser?.call("setStateMachine", stateMachineId)
-        toolbar.updateActionsAsync()
+        updateToolbars()
         updateLabels()
     }
 
@@ -378,7 +437,8 @@ class LottiePreviewPanel(
                     Timeline.Marker(name, m["label"] as? String ?: name, (m["start"] as? Number)?.toDouble() ?: 0.0, (m["end"] as? Number)?.toDouble() ?: 0.0)
                 }
                 markers = playerMarkers.map { it.name to it.label }
-                timeline.markers = playerMarkers
+                // JSON files take the timeline's markers from the document (editable, with their array index)
+                if (!isJson) timeline.markers = playerMarkers
                 if (marker != null && markers.none { it.first == marker }) marker = null
                 playing = message["playing"] == true
                 (message["activeAnimationId"] as? String)?.let { animationId = it }
@@ -386,7 +446,7 @@ class LottiePreviewPanel(
                 timeline.lastFrame = (totalFrames - 1).coerceAtLeast(0.0)
                 timeline.frameRate = frameRate()
                 showError(null)
-                toolbar.updateActionsAsync()
+                updateToolbars()
                 updateLabels()
             }
             "frame" -> {
@@ -400,7 +460,7 @@ class LottiePreviewPanel(
             }
             "playing" -> {
                 playing = message["playing"] == true
-                toolbar.updateActionsAsync()
+                updateToolbars()
             }
             "zoom" -> {
                 zoom = (message["zoom"] as? Number)?.toDouble() ?: 1.0
@@ -435,7 +495,7 @@ class LottiePreviewPanel(
         lastLocalSeek = System.currentTimeMillis()
         if (playing) {
             playing = false
-            toolbar.updateActionsAsync()
+            updateToolbars()
         }
         frame = target
         timeline.frame = target
@@ -447,7 +507,7 @@ class LottiePreviewPanel(
         if (!playing) lastLocalSeek = 0
         browser?.call(if (playing) "pause" else "play")
         playing = !playing
-        toolbar.updateActionsAsync()
+        updateToolbars()
     }
 
     private fun updateLabels() {
@@ -502,24 +562,44 @@ class LottiePreviewPanel(
         }, GridBagConstraints())
     }
 
-    private fun createScrubber(): JComponent = JPanel(BorderLayout()).apply {
-        border = JBUI.Borders.customLineTop(JBColor.border())
-        add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
-            border = JBUI.Borders.empty(2, 8)
-            add(frameLabel, BorderLayout.WEST)
-            add(infoLabel, BorderLayout.EAST)
-        }, BorderLayout.NORTH)
-        add(timeline.component, BorderLayout.CENTER)
-    }
-
-    private fun createActions(): DefaultActionGroup = DefaultActionGroup().apply {
+    /** Playback controls in the timeline's header row. */
+    private fun createTimelineActions(): DefaultActionGroup = DefaultActionGroup().apply {
         add(FrameStepAction(LottieBundle.message("action.frame.first"), AllIcons.Actions.Play_first) { 0.0 })
         add(FrameStepAction(LottieBundle.message("action.frame.previous"), AllIcons.Actions.Play_back) { Math.round(frame) - 1.0 })
         add(PlayPauseAction())
         add(FrameStepAction(LottieBundle.message("action.frame.next"), AllIcons.Actions.Play_forward) { Math.round(frame) + 1.0 })
         add(FrameStepAction(LottieBundle.message("action.frame.last"), AllIcons.Actions.Play_last) { totalFrames - 1 })
+        add(Separator.getInstance())
         add(LoopAction())
         add(SpeedAction())
+        if (isJson) {
+            add(Separator.getInstance())
+            add(AddMarkerAction())
+        }
+    }
+
+    private fun createScrubber(): JComponent = JPanel(BorderLayout()).apply {
+        border = JBUI.Borders.customLineTop(JBColor.border())
+        timelineToolbar = ActionManager.getInstance().createActionToolbar("LottieTimeline", createTimelineActions(), true).apply {
+            targetComponent = this@LottiePreviewPanel
+            setReservePlaceAutoPopupIcon(false)
+            component.border = JBUI.Borders.empty()
+            component.isOpaque = false
+        }
+        add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
+            border = JBUI.Borders.emptyRight(8)
+            add(timelineToolbar.component, BorderLayout.WEST)
+            // the frame readout stays; size, fps and zoom are cut short first when the pane is narrow
+            add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
+                isOpaque = false
+                add(frameLabel, BorderLayout.WEST)
+                add(infoLabel.apply { minimumSize = Dimension(0, 0) }, BorderLayout.CENTER)
+            }, BorderLayout.CENTER)
+        }, BorderLayout.NORTH)
+        add(timeline.component, BorderLayout.CENTER)
+    }
+
+    private fun createActions(): DefaultActionGroup = DefaultActionGroup().apply {
         add(MarkerAction())
         add(Separator.getInstance())
         add(ZoomAction(LottieBundle.message("action.zoom.fit"), AllIcons.General.FitContent) { browser?.call("setZoom", "fit", 1.0) })
@@ -565,6 +645,17 @@ class LottiePreviewPanel(
         }
 
         override fun actionPerformed(e: AnActionEvent) = seekLocally(target().coerceIn(0.0, (totalFrames - 1).coerceAtLeast(0.0)))
+    }
+
+    private inner class AddMarkerAction : PreviewAction(LottieBundle.message("action.marker.add"), AllIcons.General.Add) {
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = timeline.editableMarkers && totalFrames > 0
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val name = askMarkerName(LottieBundle.message("marker.add.title"), defaultMarkerName(), null) ?: return
+            markerEditor?.add(name, Math.round(frame) + inPoint)
+        }
     }
 
     private inner class TimelineLayersToggleAction : DumbAwareToggleAction(LottieBundle.message("action.timeline.layers"), null, AllIcons.Actions.ShowAsTree) {
@@ -619,7 +710,7 @@ class LottiePreviewPanel(
                         override fun isSelected(e: AnActionEvent) = option == selected()
                         override fun setSelected(e: AnActionEvent, state: Boolean) {
                             select(option)
-                            toolbar.updateActionsAsync()
+                            updateToolbars()
                         }
                     })
                 }
