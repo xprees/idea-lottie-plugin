@@ -18,7 +18,8 @@
   jump to the first or last frame
 - Markers can be edited on the timeline of Lottie JSON files: add (at a frame or the playhead), rename, delete, drag a marker's
   edges or move them to the playhead. Single-frame markers are shown as flags. Each edit is one undoable change
-- Preview toolbar: marker picker, zoom (also Ctrl/⌘ + wheel) and a checkerboard, light, dark or custom background. Rendered by the bundled dotLottie player (ThorVG, WebAssembly), without network access
+- Preview toolbar: marker picker, zoom (also Ctrl/⌘ + wheel) and a checkerboard, light, dark or custom background. Rendered by the
+  bundled dotLottie player (ThorVG, WebAssembly), without network access
 - The animation's color palette above the preview, with every use of a color; in JSON files clicking a color walks through its
   definitions
 - Gutter color swatches in Lottie JSON files with a color picker that writes the color back as Lottie components
@@ -33,12 +34,14 @@
 - *Edit State Machine as JSON* opens a state machine of a `.lottie` file in a JSON editor with a bundled schema and a check of its
   references to states, inputs, animations, markers, themes and layers; valid edits are saved into the archive
 - *Copy Code* for state machine inputs and custom events, with the matching dotLottie web calls
+- *Optimize Lottie…* for Lottie JSON and `.lottie` files, with the size before, after each step and in total: lossless cleanup,
+  rounding, hidden layer removal and image compression (scaled down, PNG/JPEG or WebP encoded by the IDE's embedded browser), saved
+  as a copy or in place (undoable); a frame comparison renders the animation before and after and asks before writing a result that
+  looks different
+- The preview's info line shows the file size (and the animation JSON's size for `.lottie` files)
 - *Convert to dotLottie 2.0* for dotLottie 1.0 files (context menu and a banner over the file): moves animations, images and audio
   to the 2.0 folders, writes a 2.0 manifest, and reports the 1.0 settings 2.0 cannot hold; undoable
 - *Extract Lottie JSON* from a `.lottie` file and *Pack as dotLottie* from a Lottie JSON file
 - *Settings › Languages & Frameworks › Lottie*
-
-### Fixed
-
-- Lottie and dotLottie files open again in 2026.3 IDEs, where the embedded browser moved into a separate bundled plugin (*Cannot
-  create editor by provider*, `NoClassDefFoundError: com/intellij/ui/jcef/JBCefApp`)
+- Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
+  preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice

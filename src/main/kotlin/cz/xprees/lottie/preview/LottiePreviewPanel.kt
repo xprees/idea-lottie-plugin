@@ -22,6 +22,7 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbAwareToggleAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
@@ -120,6 +121,8 @@ class LottiePreviewPanel(
     private var stateMachineId: String? = null
 
     private var info: LottieInfo? = null
+    /** The size the info line shows, from the last successful update. */
+    private var fileSize: String? = null
     private var palette: List<PaletteEntry> = emptyList()
 
     /** Set by the split editor: the root layer index clicked in the preview (null: nothing hit). */
@@ -138,7 +141,7 @@ class LottiePreviewPanel(
 
     // ---- UI -----------------------------------------------------------------------------------------------------------
     private val browser: PreviewBrowser? = if (JcefSupport.isAvailable()) {
-        PreviewBrowser(this, ::initConfig, { data }, ::onMessage)
+        PreviewBrowser(this, ::initConfig, { _ -> data }, ::onMessage)
     } else {
         null
     }
@@ -327,6 +330,8 @@ class LottiePreviewPanel(
         val info: LottieInfo?,
         val palette: List<PaletteEntry>,
         val archive: DotLottieArchive?,
+        /** The file size as the info line shows it: the document, or the archive and the shown animation's JSON. */
+        val size: String? = null,
     )
 
     private fun update() {
@@ -350,15 +355,19 @@ class LottiePreviewPanel(
         }
         val info = LottieModel.read(root) ?: return Prepared(null, LottieBundle.message("preview.error.not.lottie"), null, emptyList(), null)
         val palette = PaletteScanner.palette(PaletteScanner.scan(root))
-        return Prepared(text.toString().toByteArray(Charsets.UTF_8), null, info, palette, null)
+        val bytes = text.toString().toByteArray(Charsets.UTF_8)
+        return Prepared(bytes, null, info, palette, null, StringUtil.formatFileSize(bytes.size.toLong()))
     }
 
     private fun prepareDotLottie(currentAnimation: String?): Prepared {
         val bytes = file.contentsToByteArray()
         val archive = DotLottieArchive.read(bytes)
         val id = currentAnimation?.takeIf { a -> archive.manifest.animations.any { it.id == a } } ?: archive.defaultAnimationId
-        val root = id?.let(archive::animationText)?.let(MiniJson::parseOrNull)
-        return Prepared(bytes, null, LottieModel.read(root), PaletteScanner.palette(PaletteScanner.scan(root)), archive)
+        val text = id?.let(archive::animationText)
+        val root = text?.let(MiniJson::parseOrNull)
+        val size = StringUtil.formatFileSize(bytes.size.toLong()) +
+            (text?.let { " " + LottieBundle.message("preview.size.json", StringUtil.formatFileSize(it.toByteArray(Charsets.UTF_8).size.toLong())) } ?: "")
+        return Prepared(bytes, null, LottieModel.read(root), PaletteScanner.palette(PaletteScanner.scan(root)), archive, size)
     }
 
     private fun apply(prepared: Prepared) {
@@ -368,6 +377,7 @@ class LottiePreviewPanel(
         }
         showError(null)
         info = prepared.info
+        fileSize = prepared.size
         timeline.layers = timelineLayers(prepared.info)
         if (isJson) {
             val ip = prepared.info?.inPoint ?: 0.0
@@ -582,7 +592,7 @@ class LottiePreviewPanel(
                 animationHeight.toInt(),
                 String.format(Locale.ROOT, "%.4g", fps).trimEnd('0').trimEnd('.'),
                 (zoom * 100).toInt(),
-            )
+            ) + (fileSize?.let { " · $it" } ?: "")
         } else {
             ""
         }
@@ -677,6 +687,7 @@ class LottiePreviewPanel(
             add(DetailsToggleAction())
             add(ExtractAnimationAction())
         }
+        add(cz.xprees.lottie.actions.OptimizeLottieAction())
     }
 
     private abstract inner class PreviewAction(text: String, icon: javax.swing.Icon?) : DumbAwareAction(text, null, icon) {

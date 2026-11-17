@@ -53,7 +53,7 @@ internal class PaletteStrip(private val onNavigate: ((ColorUsage) -> Unit)?) : J
         swatches.removeAll()
         title.text = LottieBundle.message("palette.title", entries.size)
         for (entry in entries) swatches.add(Swatch(entry))
-        if (entries.isEmpty()) swatches.add(JBLabel(LottieBundle.message("palette.empty")).apply { foreground = UIUtil.getContextHelpForeground() })
+        // the title already says "No colors"
         revalidate()
         repaint()
     }
