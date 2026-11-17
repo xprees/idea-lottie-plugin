@@ -5,7 +5,9 @@
 name: Release
 on:
   release:
-    types: [ prereleased, released ]
+    # once per release, whether it is published as a release or a pre-release ("released" would fire again when a published
+    # pre-release is later switched to a full release, and publish the same version twice)
+    types: [ published ]
 
 jobs:
 
@@ -17,6 +19,16 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+
+      # Stop before anything else when the Marketplace token is missing: an empty secret only fails at the very end otherwise
+      - name: Check secrets
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$PUBLISH_TOKEN" ]; then
+            echo "::error title=PUBLISH_TOKEN is empty::Add a JetBrains Marketplace token as the repository secret PUBLISH_TOKEN (Settings > Secrets and variables > Actions > Repository secrets; not a variable or an environment secret), then re-run this workflow."
+            exit 1
+          fi
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space

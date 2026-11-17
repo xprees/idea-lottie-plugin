@@ -52,6 +52,8 @@ internal class Timeline(private val callbacks: Callbacks) {
         fun renameMarker(marker: Marker) {}
         fun deleteMarker(marker: Marker) {}
         fun changeMarker(marker: Marker, start: Double, end: Double) {}
+        /** Code that plays [marker], and the name of the platform it is for (null: no copy item). */
+        fun markerCode(marker: Marker): Pair<String, String>? = null
     }
 
     /**
@@ -327,6 +329,11 @@ internal class Timeline(private val callbacks: Callbacks) {
                 item(LottieBundle.message("timeline.marker.play", marker.label)) { callbacks.playMarker(marker) }
                 item(LottieBundle.message("timeline.marker.copy", marker.label)) {
                     CopyPasteManager.getInstance().setContents(StringSelection(marker.label))
+                }
+                callbacks.markerCode(marker)?.let { (code, platform) ->
+                    item(LottieBundle.message("timeline.marker.copy.code", marker.label, platform)) {
+                        CopyPasteManager.getInstance().setContents(StringSelection(code))
+                    }
                 }
                 if (marker.index != null && editableMarkers) {
                     item(LottieBundle.message("timeline.marker.rename")) { callbacks.renameMarker(marker) }

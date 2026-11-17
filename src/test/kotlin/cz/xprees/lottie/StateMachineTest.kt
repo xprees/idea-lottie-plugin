@@ -5,6 +5,8 @@ import cz.xprees.lottie.dotlottie.DotLottieWriter
 import cz.xprees.lottie.json.MiniJson
 import cz.xprees.lottie.json.arr
 import cz.xprees.lottie.json.obj
+import cz.xprees.lottie.snippets.CodePlatform
+import cz.xprees.lottie.snippets.SnippetGenerator
 import cz.xprees.lottie.statemachine.InputType
 import cz.xprees.lottie.statemachine.StateMachine
 import cz.xprees.lottie.statemachine.StateMachineChecker
@@ -116,13 +118,13 @@ class StateMachineTest {
 
     @Test
     fun `code snippets drive the dotlottie-web player`() {
-        assertThat(cz.xprees.lottie.statemachine.Snippets.forInput(StateMachineInput("isOn", InputType.BOOLEAN, false), true))
+        assertThat(SnippetGenerator.input(CodePlatform.DOTLOTTIE_WEB, StateMachineInput("isOn", InputType.BOOLEAN, false), true))
             .isEqualTo("dotLottie.stateMachineSetBooleanInput('isOn', true);")
-        assertThat(cz.xprees.lottie.statemachine.Snippets.forInput(StateMachineInput("n", InputType.NUMERIC, 0L), 2.5))
+        assertThat(SnippetGenerator.input(CodePlatform.DOTLOTTIE_WEB, StateMachineInput("n", InputType.NUMERIC, 0L), 2.5))
             .isEqualTo("dotLottie.stateMachineSetNumericInput('n', 2.5);")
-        assertThat(cz.xprees.lottie.statemachine.Snippets.forInput(StateMachineInput("it's", InputType.STRING, ""), "a\\b\n'c'"))
+        assertThat(SnippetGenerator.input(CodePlatform.DOTLOTTIE_WEB, StateMachineInput("it's", InputType.STRING, ""), "a\\b\n'c'"))
             .isEqualTo("dotLottie.stateMachineSetStringInput('it\\'s', 'a\\\\b\\n\\'c\\'');")
-        assertThat(cz.xprees.lottie.statemachine.Snippets.forInput(StateMachineInput("go", InputType.EVENT, null), null))
+        assertThat(SnippetGenerator.input(CodePlatform.DOTLOTTIE_WEB, StateMachineInput("go", InputType.EVENT, null), null))
             .isEqualTo("dotLottie.stateMachineFireEvent('go');")
     }
 }

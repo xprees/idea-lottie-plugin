@@ -34,6 +34,10 @@ data class ColorUsage(
     val animated: Boolean = false,
     val gradientStop: Int? = null,
     val slotId: String? = null,
+    /** The number of stops of the gradient ([gradientStop]'s `p`), to find the stop's alpha. */
+    val gradientStops: Int? = null,
+    /** The color property (`{"a", "k", "sid"}`) holding the color, for fills, strokes, effect colors and slots; null otherwise. */
+    val property: JsonPath? = null,
 ) {
     val editable get() = gradientStop == null
 }
@@ -147,14 +151,14 @@ object PaletteScanner {
         val k = prop["k"]
         val static = k.numbers()?.let(LottieColor::fromComponents)
         if (static != null) {
-            out += ColorUsage(static, kind, path + "k", owner, slotId = slotId)
+            out += ColorUsage(static, kind, path + "k", owner, slotId = slotId, property = path)
             return
         }
         k.arr()?.forEachIndexed { i, kf ->
             val keyframe = kf.obj() ?: return@forEachIndexed
             for (key in listOf("s", "e")) {
                 val color = keyframe[key].numbers()?.let(LottieColor::fromComponents) ?: continue
-                out += ColorUsage(color, kind, path + listOf("k", i, key), owner, animated = true, slotId = slotId)
+                out += ColorUsage(color, kind, path + listOf("k", i, key), owner, animated = true, slotId = slotId, property = path)
             }
         }
     }
@@ -172,7 +176,7 @@ object PaletteScanner {
                 val alpha = values.getOrNull(alphaIndex)
                 val comps = listOf(values[base + 1], values[base + 2], values[base + 3]) + listOfNotNull(alpha)
                 val color = LottieColor.fromComponents(comps) ?: continue
-                out += ColorUsage(color, ColorKind.GRADIENT, valuePath, owner, animated, gradientStop = s)
+                out += ColorUsage(color, ColorKind.GRADIENT, valuePath, owner, animated, gradientStop = s, gradientStops = stops)
             }
         }
         val static = k.numbers()

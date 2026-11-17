@@ -115,6 +115,9 @@ class StateMachinePlatformTest : BasePlatformTestCase() {
             override fun addInput() {}
             override fun editInput(input: cz.xprees.lottie.statemachine.StateMachineInput) {}
             override fun deleteInput(input: cz.xprees.lottie.statemachine.StateMachineInput) {}
+            override fun inputCode(input: cz.xprees.lottie.statemachine.StateMachineInput, value: Any?) = "code ${input.name}"
+            override fun customEventsCode() = "events"
+            override fun codePlatformName() = "test"
         })
         val machine = StateMachine.parse(DotLottieArchive.read(TestData.bytes("interactive.lottie")).stateMachineText("toggle")!!)!!
         panel.showDefinition("toggle", machine)
