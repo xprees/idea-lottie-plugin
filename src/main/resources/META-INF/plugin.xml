@@ -8,5 +8,20 @@
     <depends>com.intellij.modules.platform</depends>
     <!-- Lottie .json files stay JSON files; the Lottie features build on the JSON plugin -->
     <depends>com.intellij.modules.json</depends>
-    <!-- Rider's Solution Explorer has its own popup group instead of ProjectViewPopupMenu -->
+
+    <resource-bundle>messages.LottieBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- .lottie: dotLottie archives, opened in the preview only -->
+        <fileType name="dotLottie" implementationClass="cz.xprees.lottie.lang.DotLottieFileType" fieldName="INSTANCE"
+                  extensions="lottie"/>
+        <!-- Lottie .json files: recognized by name (*.lottie.json) or content, they keep the JSON file type -->
+        <fileIconProvider implementation="cz.xprees.lottie.lang.LottieFileIconProvider" order="first"/>
+
+        <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
+        <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
+                                 instance="cz.xprees.lottie.settings.LottieConfigurable"
+                                 key="settings.display.name" bundle="messages.LottieBundle"/>
+    </extensions>
+
 </idea-plugin>
