@@ -179,8 +179,6 @@ class LottiePreviewPanel(
             playingBeforeScrub = false
         }
 
-        override fun togglePlay() = togglePlayback()
-
         override fun layerClicked(index: Int) {
             timeline.selectedLayer = index
             val pick = onPick
@@ -288,6 +286,7 @@ class LottiePreviewPanel(
             add(splitter, BorderLayout.CENTER)
         }
         add(createScrubber(), BorderLayout.SOUTH)
+        PlaybackKeys.install(this, enabled = { totalFrames > 0 }) { onPlaybackKey(it, fromPage = false) }
 
         if (document != null) {
             document.addDocumentListener(object : DocumentListener {
@@ -482,6 +481,13 @@ class LottiePreviewPanel(
                 updateLabels()
             }
             "pick" -> onPick?.invoke((message["index"] as? Number)?.toInt())
+            "key" -> PlaybackKeys.fromPage(
+                message["key"] as? String,
+                shift = message["shift"] == true,
+                ctrl = message["ctrl"] == true,
+                meta = message["meta"] == true,
+                alt = message["alt"] == true,
+            )?.takeIf { totalFrames > 0 }?.let { onPlaybackKey(it, fromPage = true) }
             "error" -> showError(LottieBundle.message("preview.error.render", message["message"] as? String ?: ""))
             "smState" -> if (!isJson) stateMachinePanel.showSnapshot(StateMachinePanel.Snapshot.of(message))
             "smEvent" -> if (!isJson) stateMachinePanel.logEvent(message)
@@ -517,6 +523,39 @@ class LottiePreviewPanel(
         timeline.frame = target
         updateLabels()
         browser?.call("seek", target)
+    }
+
+    private class KeyPress(val key: PlaybackKey, val fromPage: Boolean, val time: Long)
+
+    private var lastKeyPress: KeyPress? = null
+
+    /**
+     * A playback key from the Swing bindings or from the page. With the focus in the page, the embedded browser can deliver one
+     * press both ways: the copy from the other source right after it is dropped. Repeats of a held key come from one source.
+     */
+    private fun onPlaybackKey(key: PlaybackKey, fromPage: Boolean) {
+        val now = System.currentTimeMillis()
+        val last = lastKeyPress
+        if (last != null && last.key == key && last.fromPage != fromPage && now - last.time < DUPLICATE_KEY_MS) {
+            lastKeyPress = null
+            return
+        }
+        lastKeyPress = KeyPress(key, fromPage, now)
+        playbackKey(key)
+    }
+
+    fun playbackKey(key: PlaybackKey) {
+        val last = (totalFrames - 1).coerceAtLeast(0.0)
+        fun step(delta: Double) = seekLocally((Math.round(frame) + delta).toDouble().coerceIn(0.0, last))
+        when (key) {
+            PlaybackKey.TOGGLE -> togglePlayback()
+            PlaybackKey.PREVIOUS -> step(-1.0)
+            PlaybackKey.NEXT -> step(1.0)
+            PlaybackKey.BACK_10 -> step(-10.0)
+            PlaybackKey.FORWARD_10 -> step(10.0)
+            PlaybackKey.FIRST -> seekLocally(0.0)
+            PlaybackKey.LAST -> seekLocally(last)
+        }
     }
 
     private fun togglePlayback() {
@@ -930,6 +969,7 @@ class LottiePreviewPanel(
         private const val DETAILS_VISIBLE_KEY = "cz.xprees.lottie.details.visible"
         private const val TIMELINE_LAYERS_KEY = "cz.xprees.lottie.timeline.layers"
         private const val LOCAL_SEEK_GRACE_MS = 400L
+        private const val DUPLICATE_KEY_MS = 250L
     }
 }
 

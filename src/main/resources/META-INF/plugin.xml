@@ -40,6 +40,7 @@
                          implementationClass="cz.xprees.lottie.statemachine.StateMachineReferencesInspection"/>
 
         <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
+        <editorNotificationProvider implementation="cz.xprees.lottie.actions.DotLottieV1NotificationProvider"/>
         <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
                                  instance="cz.xprees.lottie.settings.LottieConfigurable"
                                  key="settings.display.name" bundle="messages.LottieBundle"/>
@@ -60,6 +61,10 @@
         </action>
         <action id="cz.xprees.lottie.PackDotLottie" class="cz.xprees.lottie.actions.PackDotLottieAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.ExtractAnimation"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
+        <action id="cz.xprees.lottie.MigrateDotLottie" class="cz.xprees.lottie.actions.MigrateDotLottieAction">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.PackDotLottie"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
         </action>
     </actions>

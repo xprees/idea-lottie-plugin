@@ -12,9 +12,10 @@
 - dotLottie files open in the preview, with pickers for the animation, theme and state machine, and a panel with the manifest and
   the files of the archive
 - A timeline under the preview to scrub through the animation: frame ruler and playhead, markers as named segments, optional lanes
-  with each layer's in/out range; drag to scrub, keyboard stepping (←/→, Shift for ten frames, Home/End, Space), double-click a
-  marker to play its segment, click a layer to select it
+  with each layer's in/out range; drag to scrub, double-click a marker to play its segment, click a layer to select it
 - Playback controls in the timeline header: play/pause, first/previous/next/last frame, loop and speed
+- Playback keys anywhere in the preview: Space plays or pauses, ←/→ step a frame (Shift: ten), Ctrl+←/→ (⌘ on macOS) or Home/End
+  jump to the first or last frame
 - Markers can be edited on the timeline of Lottie JSON files: add (at a frame or the playhead), rename, delete, drag a marker's
   edges or move them to the playhead. Single-frame markers are shown as flags. Each edit is one undoable change
 - Preview toolbar: marker picker, zoom (also Ctrl/⌘ + wheel) and a checkerboard, light, dark or custom background. Rendered by the bundled dotLottie player (ThorVG, WebAssembly), without network access
@@ -32,6 +33,8 @@
 - *Edit State Machine as JSON* opens a state machine of a `.lottie` file in a JSON editor with a bundled schema and a check of its
   references to states, inputs, animations, markers, themes and layers; valid edits are saved into the archive
 - *Copy Code* for state machine inputs and custom events, with the matching dotLottie web calls
+- *Convert to dotLottie 2.0* for dotLottie 1.0 files (context menu and a banner over the file): moves animations, images and audio
+  to the 2.0 folders, writes a 2.0 manifest, and reports the 1.0 settings 2.0 cannot hold; undoable
 - *Extract Lottie JSON* from a `.lottie` file and *Pack as dotLottie* from a Lottie JSON file
 - *Settings › Languages & Frameworks › Lottie*
 
