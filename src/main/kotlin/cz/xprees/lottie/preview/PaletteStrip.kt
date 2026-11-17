@@ -29,9 +29,13 @@ import javax.swing.ScrollPaneConstants
 
 /**
  * The colors of the animation as a row of swatches above the preview. A swatch's tooltip lists its uses; clicking it calls
- * [onNavigate] with the next use (cycling), so in a JSON file the caret walks through every place the color is defined.
+ * [onRecolor] to change every use at once. Alt+click (and the context menu) calls [onNavigate] with the next use (cycling), so in a
+ * JSON file the caret walks through every place the color is defined.
  */
-internal class PaletteStrip(private val onNavigate: ((ColorUsage) -> Unit)?) : JPanel(BorderLayout()) {
+internal class PaletteStrip(
+    private val onNavigate: ((ColorUsage) -> Unit)?,
+    private val onRecolor: ((PaletteEntry) -> Unit)? = null,
+) : JPanel(BorderLayout()) {
 
     private val swatches = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(3))).apply { isOpaque = false }
     private val title = JBLabel().apply {
@@ -65,14 +69,12 @@ internal class PaletteStrip(private val onNavigate: ((ColorUsage) -> Unit)?) : J
         init {
             preferredSize = Dimension(JBUI.scale(20), JBUI.scale(20))
             toolTipText = tooltip()
-            if (onNavigate != null) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            if (onNavigate != null || onRecolor != null) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     if (e.isPopupTrigger || e.button != MouseEvent.BUTTON1) return
-                    val navigate = onNavigate ?: return
-                    val usage = entry.usages[next % entry.usages.size]
-                    next++
-                    navigate(usage)
+                    val recolor = onRecolor
+                    if (e.isAltDown || recolor == null) navigateNext() else recolor(entry)
                 }
 
                 override fun mousePressed(e: MouseEvent) = popup(e)
@@ -81,9 +83,23 @@ internal class PaletteStrip(private val onNavigate: ((ColorUsage) -> Unit)?) : J
             })
         }
 
+        private fun navigateNext() {
+            val navigate = onNavigate ?: return
+            val usage = entry.usages[next % entry.usages.size]
+            next++
+            navigate(usage)
+        }
+
         private fun popup(e: MouseEvent) {
             if (!e.isPopupTrigger) return
             val menu = JBPopupMenu()
+            onRecolor?.let { recolor ->
+                menu.add(JBMenuItem(LottieBundle.message("palette.recolor"), AllIcons.Actions.Colors).apply { addActionListener { recolor(entry) } })
+            }
+            if (onNavigate != null) {
+                menu.add(JBMenuItem(LottieBundle.message("palette.next.use")).apply { addActionListener { navigateNext() } })
+            }
+            if (menu.componentCount > 0) menu.addSeparator()
             menu.add(JBMenuItem(LottieBundle.message("palette.copy.hex", entry.color.hex), AllIcons.Actions.Copy).apply {
                 addActionListener { CopyPasteManager.getInstance().setContents(StringSelection(entry.color.hex)) }
             })
@@ -98,7 +114,12 @@ internal class PaletteStrip(private val onNavigate: ((ColorUsage) -> Unit)?) : J
             val owners = entry.usages.mapNotNull { it.owner }.distinct()
             val ownerText = if (owners.isEmpty()) "" else "<br><br>" + owners.take(8).joinToString("<br>") { it.escapeHtml() } +
                 (if (owners.size > 8) "<br>…" else "")
-            val hint = if (onNavigate != null) "<br><br><i>${LottieBundle.message("palette.click.hint")}</i>" else ""
+            val hint = when {
+                onRecolor != null && onNavigate != null -> "<br><br><i>${LottieBundle.message("palette.click.recolor.navigate")}</i>"
+                onRecolor != null -> "<br><br><i>${LottieBundle.message("palette.click.recolor")}</i>"
+                onNavigate != null -> "<br><br><i>${LottieBundle.message("palette.click.hint")}</i>"
+                else -> ""
+            }
             return "<html><b>${entry.color.hex}</b> · ${LottieBundle.message("palette.uses", entry.count)}<br>$uses$ownerText$hint</html>"
         }
 

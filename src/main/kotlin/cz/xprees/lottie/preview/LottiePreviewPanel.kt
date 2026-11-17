@@ -62,6 +62,9 @@ import cz.xprees.lottie.model.LottieModel
 import cz.xprees.lottie.palette.ColorUsage
 import cz.xprees.lottie.palette.PaletteEntry
 import cz.xprees.lottie.palette.PaletteScanner
+import cz.xprees.lottie.palette.Recolor
+import cz.xprees.lottie.palette.RecolorDialog
+import cz.xprees.lottie.palette.RecolorWriter
 import cz.xprees.lottie.settings.LottieSettings
 import cz.xprees.lottie.settings.LottieSettings.Background
 import cz.xprees.lottie.snippets.CodePlatform
@@ -273,6 +276,8 @@ class LottiePreviewPanel(
         editorKit = com.intellij.util.ui.HTMLEditorKitBuilder().build()
         isEditable = false
         border = JBUI.Borders.empty(4, 8)
+        // read-only text: Undo with the focus here undoes the file's last change, not text typing
+        putClientProperty(com.intellij.ide.actions.UndoRedoAction.IGNORE_SWING_UNDO_MANAGER, true)
     }
     private val detailsScroll = JBScrollPane(details).apply { border = JBUI.Borders.customLineLeft(JBColor.border()) }
     private val splitter = JBSplitter(false, "cz.xprees.lottie.details.proportion", 0.72f)
@@ -289,6 +294,8 @@ class LottiePreviewPanel(
 
     init {
         Disposer.register(parent, this)
+        // takes the focus back after dialogs, so that the IDE's shortcuts (Undo) act on this file
+        isFocusable = true
 
         toolbar = ActionManager.getInstance().createActionToolbar("LottiePreview", createActions(), true).apply {
             targetComponent = this@LottiePreviewPanel
@@ -328,7 +335,7 @@ class LottiePreviewPanel(
         updateLabels()
     }
 
-    private fun createPaletteStrip() = PaletteStrip(onNavigateToColor)
+    private fun createPaletteStrip() = PaletteStrip(onNavigateToColor, ::recolor)
 
     override fun uiDataSnapshot(sink: DataSink) {
         sink[CommonDataKeys.VIRTUAL_FILE] = file
@@ -356,9 +363,11 @@ class LottiePreviewPanel(
     private fun update() {
         val text = document?.immutableCharSequence
         val currentAnimation = animationId
+        val currentTheme = themeId
+        val themeKnown = archive != null
         AppExecutorUtil.getAppExecutorService().execute {
             val prepared = try {
-                if (text != null) prepareJson(text) else prepareDotLottie(currentAnimation)
+                if (text != null) prepareJson(text) else prepareDotLottie(currentAnimation, currentTheme, themeKnown)
             } catch (e: Exception) {
                 Prepared(null, e.message ?: e.toString(), null, emptyList(), null)
             }
@@ -378,12 +387,16 @@ class LottiePreviewPanel(
         return Prepared(bytes, null, info, palette, null, StringUtil.formatFileSize(bytes.size.toLong()))
     }
 
-    private fun prepareDotLottie(currentAnimation: String?): Prepared {
+    /** [currentTheme]: the theme shown ([themeKnown] false before the first load: the animation's initial theme then). */
+    private fun prepareDotLottie(currentAnimation: String?, currentTheme: String?, themeKnown: Boolean): Prepared {
         val bytes = file.contentsToByteArray()
         val archive = DotLottieArchive.read(bytes)
         val id = currentAnimation?.takeIf { a -> archive.manifest.animations.any { it.id == a } } ?: archive.defaultAnimationId
         val text = id?.let(archive::animationText)
-        val root = text?.let(MiniJson::parseOrNull)
+        val parsed = text?.let(MiniJson::parseOrNull)
+        val theme = if (themeKnown) currentTheme else archive.manifest.animations.firstOrNull { it.id == id }?.initialTheme
+        // the palette shows the colors on screen: with a theme, the theme's colors for the slots it sets
+        val root = theme?.let(archive::themeText)?.let(MiniJson::parseOrNull)?.let { Recolor.themed(parsed, it, id) } ?: parsed
         val size = StringUtil.formatFileSize(bytes.size.toLong()) +
             (text?.let { " " + LottieBundle.message("preview.size.json", StringUtil.formatFileSize(it.toByteArray(Charsets.UTF_8).size.toLong())) } ?: "")
         return Prepared(bytes, null, LottieModel.read(root), PaletteScanner.palette(PaletteScanner.scan(root)), archive, size)
@@ -418,6 +431,8 @@ class LottiePreviewPanel(
                 themeId = archive.manifest.animations.firstOrNull { it.id == animationId }?.initialTheme
                 stateMachineId = archive.manifest.initialStateMachine
             }
+            // a theme that is gone (deleted, or its creation undone)
+            if (themeId != null && archive.manifest.themes.none { it.id == themeId } && archive.themeText(themeId!!) == null) themeId = null
         }
         data = prepared.bytes
         dataVersion++
@@ -870,6 +885,8 @@ class LottiePreviewPanel(
         override fun select(option: String?) {
             themeId = option
             browser?.call("setTheme", option)
+            // the palette follows the theme
+            scheduleUpdate(0)
         }
     }
 
@@ -915,6 +932,51 @@ class LottiePreviewPanel(
         shownMachine = id?.let { archive.stateMachineText(it) }?.let(StateMachine::parse)
         stateMachinePanel.showDefinition(id, shownMachine)
         updateCode()
+    }
+
+    // ---- recolor ------------------------------------------------------------------------------------------------------
+
+    /** Changes every use of a palette color: in the JSON document, or in the `.lottie` file's animation or one of its themes. */
+    private fun recolor(entry: PaletteEntry) {
+        try {
+            recolorWithDialog(entry)
+        } finally {
+            // the focus back on the preview (not a text field it had before), so that Ctrl+Z undoes the change right away
+            ApplicationManager.getApplication().invokeLater({
+                if (!disposed) com.intellij.openapi.wm.IdeFocusManager.getInstance(project).requestFocus(this, true)
+            }, com.intellij.openapi.application.ModalityState.nonModal())
+        }
+    }
+
+    private fun recolorWithDialog(entry: PaletteEntry) {
+        val document = document
+        if (document != null) {
+            val dialog = RecolorDialog(project, entry, null, null, false)
+            if (!dialog.showAndGet() || dialog.color == entry.color) return
+            RecolorWriter.toDocument(project, document, entry.usages, dialog.color)
+            return
+        }
+        val archive = archive ?: return
+        val id = animationId ?: archive.defaultAnimationId ?: return
+        val v2 = archive.manifest.version?.startsWith("2") == true
+        val dialog = RecolorDialog(project, entry, archive.manifest.themes, themeId?.takeIf { v2 }, v2)
+        if (!dialog.showAndGet()) return
+        val color = dialog.color
+        if (color.rgba == entry.color.rgba) return
+        when (dialog.target) {
+            RecolorDialog.Target.ANIMATION -> RecolorWriter.toDotLottieAnimation(project, file, id, entry.usages, color)
+            RecolorDialog.Target.THEME -> {
+                if (entry.usages.none(Recolor::themable)) {
+                    Messages.showInfoMessage(project, LottieBundle.message("recolor.theme.nothing"), LottieBundle.message("recolor.title", entry.color.hex))
+                    return
+                }
+                val theme = dialog.themeId
+                // show the theme once the file reloads
+                themeId = theme
+                val (themed, skipped) = RecolorWriter.toDotLottieTheme(project, file, id, entry.usages, entry.color, color, theme, dialog.newThemeName)
+                cz.xprees.lottie.actions.LottieNotifications.info(project, LottieBundle.message("recolor.done.theme", theme, themed, skipped))
+            }
+        }
     }
 
     // ---- code snippets ------------------------------------------------------------------------------------------------

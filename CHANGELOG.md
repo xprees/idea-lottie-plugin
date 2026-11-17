@@ -32,6 +32,10 @@
   enters a marker, start the state machine, set each input and listen to its custom events. For dotLottie Web and React,
   lottie-web, Lottie React Native, dotLottie Android (Compose, View), Lottie Android and Compose, dotLottie iOS, Lottie iOS and
   Flutter; the platform is guessed from the project's build files and can be changed per project
+- Recolor from the palette: clicking a color opens a color picker that changes every use of it at once (static values, keyframes,
+  gradient stops, solid layers and text), in Lottie JSON and `.lottie` files, as one undoable change. For dotLottie 2.0 files the
+  new color can be saved in a new or existing theme instead (the colors become slots); the palette shows the selected theme's
+  colors. Alt+click walks through the uses as before
 - A *State machine* tab for interactive dotLottie files: the running machine's state, its inputs with live values to set, reset or
   fire, and a log of transitions, input changes and custom events
 - State machine inputs are added, edited, renamed (with every reference) and deleted from the panel, as undoable edits of the archive
