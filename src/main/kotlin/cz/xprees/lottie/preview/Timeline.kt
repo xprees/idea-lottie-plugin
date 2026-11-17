@@ -18,17 +18,12 @@ import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.datatransfer.StringSelection
-import java.awt.event.ActionEvent
-import java.awt.event.InputEvent
-import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelEvent
 import java.util.Locale
-import javax.swing.AbstractAction
 import javax.swing.JComponent
 import javax.swing.JPanel
-import javax.swing.KeyStroke
 import javax.swing.Scrollable
 import javax.swing.SwingConstants
 
@@ -51,7 +46,6 @@ internal class Timeline(private val callbacks: Callbacks) {
         fun seek(frame: Double)
         fun scrubStarted()
         fun scrubEnded()
-        fun togglePlay()
         fun layerClicked(index: Int)
         fun playMarker(marker: Marker)
         fun addMarker(frame: Double) {}
@@ -212,24 +206,8 @@ internal class Timeline(private val callbacks: Callbacks) {
             }
             addMouseListener(mouse)
             addMouseMotionListener(mouse)
-            bind(KeyEvent.VK_LEFT, 0) { step(-1.0) }
-            bind(KeyEvent.VK_RIGHT, 0) { step(1.0) }
-            bind(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK) { step(-10.0) }
-            bind(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK) { step(10.0) }
-            bind(KeyEvent.VK_HOME, 0) { callbacks.seek(0.0) }
-            bind(KeyEvent.VK_END, 0) { callbacks.seek(lastFrame) }
-            bind(KeyEvent.VK_SPACE, 0) { callbacks.togglePlay() }
+            // the playback keys (Space, arrows, Home/End) are bound on the whole preview, see PlaybackKeys
         }
-
-        private fun bind(key: Int, modifiers: Int, run: () -> Unit) {
-            val id = "lottie.timeline.$key.$modifiers"
-            getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(key, modifiers), id)
-            actionMap.put(id, object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent?) = run()
-            })
-        }
-
-        private fun step(delta: Double) = callbacks.seek((Math.round(frame) + delta).coerceIn(0.0, lastFrame.coerceAtLeast(0.0)))
 
         private fun seekTo(e: MouseEvent) = callbacks.seek(scale(width).frame(e.x, exact = e.isAltDown))
 

@@ -43,6 +43,15 @@ function send(msg) {
   }
 }
 
+// The canvas has the keyboard focus after a click, so the IDE never sees these keys: hand the playback keys (Space, arrows,
+// Home/End, with their modifiers) to the plugin, which maps them like the rest of the preview (PlaybackKeys.kt).
+const PLAYBACK_KEYS = new Set([' ', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+document.addEventListener('keydown', (e) => {
+  if (!PLAYBACK_KEYS.has(e.key) || e.isComposing) return;
+  e.preventDefault();
+  send({ type: 'key', key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey });
+});
+
 function showMessage(text) {
   message.textContent = text || '';
   message.hidden = !text;

@@ -31,7 +31,7 @@ import java.io.File
 class ExtractAnimationAction : DumbAwareAction(
     LottieBundle.messagePointer("action.extract.text"),
     LottieBundle.messagePointer("action.extract.description"),
-    AllIcons.Actions.Download,
+    AllIcons.FileTypes.Json,
 ) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -105,7 +105,7 @@ class PackDotLottieAction : DumbAwareAction(
                     return
                 } ?: return
                 val folder = file.parent?.toNioPath()?.toFile()
-                bytes = DotLottieWriter.pack(base, root, generator()) { u, p ->
+                bytes = DotLottieWriter.pack(base, root, LottieNotifications.GENERATOR) { u, p ->
                     if (folder == null || u.startsWith("http:") || u.startsWith("https:")) return@pack null
                     val candidate = File(File(folder, u), p).canonicalFile
                     // only files inside the animation's folder tree
@@ -123,14 +123,19 @@ class PackDotLottieAction : DumbAwareAction(
             }
         })
     }
-
-    private fun generator(): String = "Lottie for JetBrains IDEs"
 }
 
 internal object LottieNotifications {
-    fun error(project: Project, message: String) {
+    /** The `generator` written into dotLottie manifests. */
+    const val GENERATOR = "Lottie for JetBrains IDEs"
+
+    fun error(project: Project, message: String) = notify(project, message, NotificationType.ERROR)
+
+    fun info(project: Project, message: String) = notify(project, message, NotificationType.INFORMATION)
+
+    private fun notify(project: Project, message: String, type: NotificationType) {
         ApplicationManager.getApplication().invokeLater {
-            NotificationGroupManager.getInstance().getNotificationGroup("Lottie").createNotification(message, NotificationType.ERROR).notify(project)
+            NotificationGroupManager.getInstance().getNotificationGroup("Lottie").createNotification(message, type).notify(project)
         }
     }
 }

@@ -75,6 +75,9 @@ class DotLottieArchive private constructor(
 
     fun bytes(path: String): ByteArray? = files[path]
 
+    /** Every file of the archive by path, in archive order. */
+    internal val allFiles: Map<String, ByteArray> get() = files
+
     fun animationText(id: String): String? = (files["a/$id.json"] ?: files["animations/$id.json"])?.toString(Charsets.UTF_8)
 
     fun themeText(id: String): String? = files["t/$id.json"]?.toString(Charsets.UTF_8)
