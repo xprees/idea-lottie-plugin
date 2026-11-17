@@ -159,7 +159,10 @@ const api = {
       stateMachineConfig: { openUrlPolicy: { requireUserInteraction: true, whitelist: [] } },
     });
     attachEvents(state.player);
-    send({ type: 'ready' });
+    // The IDE starts loading as soon as it hears 'ready'; a load() before the player's WebAssembly is initialized would be dropped
+    const announce = () => send({ type: 'ready' });
+    if (state.player.isReady) announce();
+    else state.player.addEventListener('ready', announce);
   },
 
   /**
