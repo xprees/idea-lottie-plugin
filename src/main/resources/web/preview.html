@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Everything is served by the plugin itself: no network access, no inline scripts. WebAssembly needs wasm-unsafe-eval. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:; font-src 'self' data:">
+  <title>Lottie preview</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+<div id="stage" class="bg-checkerboard">
+  <div id="frame">
+    <canvas id="player"></canvas>
+    <canvas id="overlay"></canvas>
+  </div>
+  <div id="message" hidden></div>
+</div>
+<script type="module" src="preview.js"></script>
+</body>
+</html>

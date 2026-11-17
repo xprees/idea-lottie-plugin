@@ -8,6 +8,8 @@
     <depends>com.intellij.modules.platform</depends>
     <!-- Lottie .json files stay JSON files; the Lottie features build on the JSON plugin -->
     <depends>com.intellij.modules.json</depends>
+    <!-- Rider's Solution Explorer has its own popup group instead of ProjectViewPopupMenu -->
+    <depends optional="true" config-file="lottie-rider.xml">com.intellij.modules.rider</depends>
 
     <resource-bundle>messages.LottieBundle</resource-bundle>
 
@@ -17,6 +19,8 @@
                   extensions="lottie"/>
         <!-- Lottie .json files: recognized by name (*.lottie.json) or content, they keep the JSON file type -->
         <fileIconProvider implementation="cz.xprees.lottie.lang.LottieFileIconProvider" order="first"/>
+        <fileEditorProvider implementation="cz.xprees.lottie.preview.LottieJsonEditorProvider"/>
+        <fileEditorProvider implementation="cz.xprees.lottie.preview.DotLottieEditorProvider"/>
 
         <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
         <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
@@ -24,4 +28,14 @@
                                  key="settings.display.name" bundle="messages.LottieBundle"/>
     </extensions>
 
+    <actions>
+        <action id="cz.xprees.lottie.ExtractAnimation" class="cz.xprees.lottie.actions.ExtractAnimationAction">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="ProjectViewPopupMenuModifyGroup"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
+        <action id="cz.xprees.lottie.PackDotLottie" class="cz.xprees.lottie.actions.PackDotLottieAction">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.ExtractAnimation"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
+    </actions>
 </idea-plugin>

@@ -1,0 +1,67 @@
+:root {
+  --checker-a: #ffffff;
+  --checker-b: #e6e6e6;
+  --text: #6f737a;
+  --highlight: #3574f0;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  user-select: none;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+}
+
+#stage.bg-checkerboard {
+  background-color: var(--checker-a);
+  background-image: conic-gradient(var(--checker-b) 25%, transparent 0 50%, var(--checker-b) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+#stage.bg-light { background: #ffffff; }
+#stage.bg-dark { background: #1e1f22; }
+
+#frame {
+  position: relative;
+  margin: 16px;
+  line-height: 0;
+}
+
+#player, #overlay {
+  display: block;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#frame.pickable #player {
+  cursor: crosshair;
+}
+
+#message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  white-space: pre-wrap;
+  background: inherit;
+}
+
+/* the display above would otherwise override the hidden attribute and cover the animation */
+#message[hidden] {
+  display: none;
+}
