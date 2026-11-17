@@ -63,6 +63,10 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.ExtractAnimation"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
         </action>
+        <action id="cz.xprees.lottie.OptimizeLottie" class="cz.xprees.lottie.actions.OptimizeLottieAction">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.PackDotLottie"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
         <action id="cz.xprees.lottie.MigrateDotLottie" class="cz.xprees.lottie.actions.MigrateDotLottieAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.PackDotLottie"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>

@@ -262,6 +262,21 @@ object DotLottieWriter {
         return out.toByteArray()
     }
 
+    /** A Deflate ZIP of [entries], in their order, at [level] (0..9). */
+    fun write(entries: Map<String, ByteArray>, level: Int = java.util.zip.Deflater.BEST_COMPRESSION): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.setMethod(ZipOutputStream.DEFLATED)
+            zip.setLevel(level)
+            for ((name, bytes) in entries) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
     private val ID_CHARS = Regex("[^a-zA-Z0-9._ -]")
 
     /** A manifest/file id that follows the dotLottie pattern `^[a-zA-Z0-9._ -]+$`. */

@@ -8,6 +8,9 @@
         <reference ref="cz.xprees.lottie.PackDotLottie">
             <add-to-group group-id="SolutionExplorerPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.ExtractAnimation"/>
         </reference>
+        <reference ref="cz.xprees.lottie.OptimizeLottie">
+            <add-to-group group-id="SolutionExplorerPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.PackDotLottie"/>
+        </reference>
         <reference ref="cz.xprees.lottie.MigrateDotLottie">
             <add-to-group group-id="SolutionExplorerPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.PackDotLottie"/>
         </reference>
