@@ -5,6 +5,8 @@ import cz.xprees.lottie.json.arr
 import cz.xprees.lottie.json.num
 import cz.xprees.lottie.json.obj
 import cz.xprees.lottie.json.str
+import cz.xprees.lottie.model.LottieModel
+import cz.xprees.lottie.statemachine.StateMachineContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.Base64
@@ -99,6 +101,25 @@ class DotLottieArchive private constructor(
             }
         }
         return MiniJson.write(LinkedHashMap(root).apply { put("assets", newAssets) }, pretty)
+    }
+
+    /** What state machines in this archive can refer to: animations, themes, markers and layer names. */
+    fun stateMachineContext(): StateMachineContext {
+        val markers = LinkedHashMap<String, Set<String>>()
+        val layers = HashSet<String>()
+        for (animation in manifest.animations) {
+            val root = animationText(animation.id)?.let(MiniJson::parseOrNull).obj() ?: continue
+            // a segment names a marker by the player's name for it (the raw comment) or its readable name
+            markers[animation.id] = LottieModel.read(root)?.markers.orEmpty().flatMap { listOf(it.name, it.comment) }.toSet()
+            collectLayerNames(root["layers"], layers)
+            root["assets"].arr()?.forEach { collectLayerNames(it.obj()?.get("layers"), layers) }
+        }
+        val themes = manifest.themes.map { it.id }.toSet() + files.keys.filter { it.startsWith("t/") && it.endsWith(".json") }.map { it.removePrefix("t/").removeSuffix(".json") }
+        return StateMachineContext(manifest.animations.map { it.id }.toSet(), themes, markers, layers)
+    }
+
+    private fun collectLayerNames(layers: Any?, into: MutableSet<String>) {
+        layers.arr()?.forEach { layer -> layer.obj()?.get("nm").str()?.let(into::add) }
     }
 
     private fun resolveImage(u: String, p: String): ByteArray? {
@@ -205,6 +226,38 @@ class DotLottieException(message: String) : RuntimeException(message)
 
 /** Builds dotLottie 2.0 archives from Lottie JSON. */
 object DotLottieWriter {
+
+    /**
+     * [original] with the entries in [changes] replaced (or added; a null value removes the entry). Every other entry is copied
+     * unchanged and in its original order.
+     */
+    fun replace(original: ByteArray, changes: Map<String, ByteArray?>): ByteArray {
+        val out = ByteArrayOutputStream()
+        val written = HashSet<String>()
+        ZipOutputStream(out).use { zip ->
+            zip.setMethod(ZipOutputStream.DEFLATED)
+            ZipInputStream(ByteArrayInputStream(original)).use { input ->
+                while (true) {
+                    val entry = input.nextEntry ?: break
+                    if (entry.isDirectory) continue
+                    val name = entry.name
+                    val bytes = if (name in changes) changes[name] else input.readBytes()
+                    written += name
+                    if (bytes == null) continue
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+            }
+            for ((name, bytes) in changes) {
+                if (name in written || bytes == null) continue
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
 
     private val ID_CHARS = Regex("[^a-zA-Z0-9._ -]")
 

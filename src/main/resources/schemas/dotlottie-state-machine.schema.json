@@ -1,0 +1,1310 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/xprees/idea-lottie-plugin/schemas/dotlottie-state-machine.schema.json",
+  "title": "dotLottie state machine",
+  "description": "A state machine of a dotLottie 2.0 file (s/<id>.json), after https://dotlottie.io/spec/2.0/",
+  "type": "object",
+  "properties": {
+    "initial": {
+      "type": "string",
+      "description": "State entered when the state machine starts"
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/state"
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/interaction"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/input"
+      }
+    }
+  },
+  "required": [
+    "initial",
+    "states"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "state": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "PlaybackState",
+            "GlobalState"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PlaybackState"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Plays an animation",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "const": "PlaybackState"
+              },
+              "animation": {
+                "type": "string",
+                "description": "Animation id (a file in a/)"
+              },
+              "loop": {
+                "type": "boolean"
+              },
+              "loopCount": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "autoplay": {
+                "type": "boolean"
+              },
+              "final": {
+                "type": "boolean"
+              },
+              "mode": {
+                "enum": [
+                  "Forward",
+                  "Reverse",
+                  "Bounce",
+                  "ReverseBounce"
+                ]
+              },
+              "speed": {
+                "type": "number"
+              },
+              "segment": {
+                "type": "string",
+                "description": "Name of a Lottie marker whose range is played"
+              },
+              "backgroundColor": {
+                "type": "integer",
+                "description": "u32 RGBA"
+              },
+              "entryActions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "exitActions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/transition"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "type",
+              "animation",
+              "transitions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GlobalState"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Transitions checked first, whatever the current state",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "const": "GlobalState"
+              },
+              "entryActions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "exitActions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/transition"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "type",
+              "transitions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "Transition",
+            "Tweened"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Transition"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "An immediate state change",
+            "properties": {
+              "type": {
+                "const": "Transition"
+              },
+              "toState": {
+                "type": "string",
+                "description": "Name of the state to go to"
+              },
+              "guards": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/guard"
+                },
+                "description": "All must pass"
+              }
+            },
+            "required": [
+              "type",
+              "toState"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Tweened"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "A gradual state change",
+            "properties": {
+              "type": {
+                "const": "Tweened"
+              },
+              "toState": {
+                "type": "string",
+                "description": "Name of the state to go to"
+              },
+              "guards": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/guard"
+                },
+                "description": "All must pass"
+              },
+              "duration": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Seconds"
+              },
+              "easing": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "Cubic Bézier [x1, y1, x2, y2]"
+              }
+            },
+            "required": [
+              "type",
+              "toState",
+              "duration",
+              "easing"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "guard": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "Numeric",
+            "String",
+            "Boolean",
+            "Event"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Numeric"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Compares a Numeric input",
+            "properties": {
+              "type": {
+                "const": "Numeric"
+              },
+              "inputName": {
+                "type": "string",
+                "description": "Name of the input to evaluate"
+              },
+              "conditionType": {
+                "enum": [
+                  "Equal",
+                  "NotEqual",
+                  "GreaterThan",
+                  "GreaterThanOrEqual",
+                  "LessThan",
+                  "LessThanOrEqual"
+                ]
+              },
+              "compareTo": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "conditionType",
+              "compareTo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "String"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Compares a String input",
+            "properties": {
+              "type": {
+                "const": "String"
+              },
+              "inputName": {
+                "type": "string",
+                "description": "Name of the input to evaluate"
+              },
+              "conditionType": {
+                "enum": [
+                  "Equal",
+                  "NotEqual"
+                ]
+              },
+              "compareTo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "conditionType",
+              "compareTo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Boolean"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Compares a Boolean input",
+            "properties": {
+              "type": {
+                "const": "Boolean"
+              },
+              "inputName": {
+                "type": "string",
+                "description": "Name of the input to evaluate"
+              },
+              "conditionType": {
+                "enum": [
+                  "Equal",
+                  "NotEqual"
+                ]
+              },
+              "compareTo": {
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "conditionType",
+              "compareTo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Event"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Passes when the Event input fired",
+            "properties": {
+              "type": {
+                "const": "Event"
+              },
+              "inputName": {
+                "type": "string",
+                "description": "Name of the input to evaluate"
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "OpenUrl",
+            "SetTheme",
+            "Increment",
+            "Decrement",
+            "Toggle",
+            "SetBoolean",
+            "SetString",
+            "SetNumeric",
+            "Fire",
+            "Reset",
+            "SetFrame",
+            "SetProgress",
+            "FireCustomEvent"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "OpenUrl"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Opens a URL",
+            "properties": {
+              "type": {
+                "const": "OpenUrl"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL to open, or '$input' (a String input)"
+              },
+              "target": {
+                "enum": [
+                  "_blank",
+                  "_self",
+                  "_parent",
+                  "_top",
+                  "_unfencedTop"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "url",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetTheme"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Applies a dotLottie theme",
+            "properties": {
+              "type": {
+                "const": "SetTheme"
+              },
+              "value": {
+                "type": "string",
+                "description": "Theme id, or '$input' (a String input)"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Increment"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Increments a Numeric input (by 1 or 'value')",
+            "properties": {
+              "type": {
+                "const": "Increment"
+              },
+              "inputName": {
+                "type": "string"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Decrement"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Decrements a Numeric input (by 1 or 'value')",
+            "properties": {
+              "type": {
+                "const": "Decrement"
+              },
+              "inputName": {
+                "type": "string"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Toggle"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Toggles a Boolean input",
+            "properties": {
+              "type": {
+                "const": "Toggle"
+              },
+              "inputName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetBoolean"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sets a Boolean input",
+            "properties": {
+              "type": {
+                "const": "SetBoolean"
+              },
+              "inputName": {
+                "type": "string"
+              },
+              "value": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetString"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sets a String input",
+            "properties": {
+              "type": {
+                "const": "SetString"
+              },
+              "inputName": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetNumeric"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sets a Numeric input",
+            "properties": {
+              "type": {
+                "const": "SetNumeric"
+              },
+              "inputName": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "inputName",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Fire"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Fires an Event input",
+            "properties": {
+              "type": {
+                "const": "Fire"
+              },
+              "inputName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Reset"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Resets an input to its initial value",
+            "properties": {
+              "type": {
+                "const": "Reset"
+              },
+              "inputName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetFrame"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sets the current frame of the active animation",
+            "properties": {
+              "type": {
+                "const": "SetFrame"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SetProgress"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sets the progress (0-1) of the active animation",
+            "properties": {
+              "type": {
+                "const": "SetProgress"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\$.+"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FireCustomEvent"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Sends a custom event to the host application",
+            "properties": {
+              "type": {
+                "const": "FireCustomEvent"
+              },
+              "value": {
+                "type": "string",
+                "description": "Data passed to the host application's stateMachineCustomEvent listener"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "interaction": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "PointerUp",
+            "PointerDown",
+            "PointerEnter",
+            "PointerMove",
+            "PointerExit",
+            "Click",
+            "OnComplete",
+            "OnLoopComplete"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointerUp"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Pointer released",
+            "properties": {
+              "type": {
+                "const": "PointerUp"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointerDown"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Pointer pressed",
+            "properties": {
+              "type": {
+                "const": "PointerDown"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointerEnter"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Pointer enters",
+            "properties": {
+              "type": {
+                "const": "PointerEnter"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointerMove"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Pointer moves",
+            "properties": {
+              "type": {
+                "const": "PointerMove"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointerExit"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Pointer leaves",
+            "properties": {
+              "type": {
+                "const": "PointerExit"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Click"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "Click or tap",
+            "properties": {
+              "type": {
+                "const": "Click"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "layerName": {
+                "type": "string",
+                "description": "Only for this layer"
+              }
+            },
+            "required": [
+              "type",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "OnComplete"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "The state's animation completed",
+            "properties": {
+              "type": {
+                "const": "OnComplete"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "stateName": {
+                "type": "string",
+                "description": "State whose animation is watched"
+              }
+            },
+            "required": [
+              "type",
+              "actions",
+              "stateName"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "OnLoopComplete"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "description": "A loop of the state's animation completed",
+            "properties": {
+              "type": {
+                "const": "OnLoopComplete"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/action"
+                }
+              },
+              "stateName": {
+                "type": "string",
+                "description": "State whose animation is watched"
+              }
+            },
+            "required": [
+              "type",
+              "actions",
+              "stateName"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "Numeric",
+            "String",
+            "Boolean",
+            "Event"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Numeric"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "Numeric"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name used by guards, actions and code"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "String"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "String"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name used by guards, actions and code"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Boolean"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "Boolean"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name used by guards, actions and code"
+              },
+              "value": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Event"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "Event"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name used by guards, actions and code"
+              }
+            },
+            "required": [
+              "type",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

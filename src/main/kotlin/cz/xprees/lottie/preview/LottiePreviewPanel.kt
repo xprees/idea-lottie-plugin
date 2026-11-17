@@ -42,6 +42,15 @@ import cz.xprees.lottie.LottieBundle
 import cz.xprees.lottie.actions.ExtractAnimationAction
 import cz.xprees.lottie.actions.PackDotLottieAction
 import cz.xprees.lottie.dotlottie.DotLottieArchive
+import cz.xprees.lottie.dotlottie.DotLottieFiles
+import cz.xprees.lottie.statemachine.InputType
+import cz.xprees.lottie.statemachine.StateMachine
+import cz.xprees.lottie.statemachine.StateMachineDocuments
+import cz.xprees.lottie.statemachine.StateMachineInput
+import cz.xprees.lottie.statemachine.StateMachineInputDialog
+import cz.xprees.lottie.statemachine.StateMachinePanel
+import cz.xprees.lottie.statemachine.StateMachineVirtualFile
+import com.intellij.ui.components.JBTabbedPane
 import cz.xprees.lottie.editor.LottieMarkerEditor
 import com.intellij.openapi.ui.InputValidatorEx
 import com.intellij.openapi.ui.Messages
@@ -251,6 +260,10 @@ class LottiePreviewPanel(
     }
     private val detailsScroll = JBScrollPane(details).apply { border = JBUI.Borders.customLineLeft(JBColor.border()) }
     private val splitter = JBSplitter(false, "cz.xprees.lottie.details.proportion", 0.72f)
+
+    /** The `.lottie` side panel: the details, and the state machine when the file has one. */
+    private val sideTabs = JBTabbedPane().apply { addTab(LottieBundle.message("details.tab"), detailsScroll) }
+    private val stateMachinePanel by lazy { StateMachinePanel(stateMachineCallbacks) }
     private val toolbar: ActionToolbar
     private val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
@@ -271,7 +284,7 @@ class LottiePreviewPanel(
             add(center, BorderLayout.CENTER)
         } else {
             splitter.firstComponent = center
-            splitter.secondComponent = detailsScroll.takeIf { detailsVisible }
+            splitter.secondComponent = sideTabs.takeIf { detailsVisible }
             add(splitter, BorderLayout.CENTER)
         }
         add(createScrubber(), BorderLayout.SOUTH)
@@ -390,9 +403,11 @@ class LottiePreviewPanel(
                 "animationId" to animationId,
                 "themeId" to themeId,
                 "marker" to marker,
+                // the page starts it once the file is loaded, also after a reload with a changed definition
+                "stateMachineId" to stateMachineId,
             ),
         )
-        if (firstLoad && stateMachineId != null) browser?.call("setStateMachine", stateMachineId)
+        updateStateMachineTab()
         updateToolbars()
         updateLabels()
     }
@@ -468,6 +483,8 @@ class LottiePreviewPanel(
             }
             "pick" -> onPick?.invoke((message["index"] as? Number)?.toInt())
             "error" -> showError(LottieBundle.message("preview.error.render", message["message"] as? String ?: ""))
+            "smState" -> if (!isJson) stateMachinePanel.showSnapshot(StateMachinePanel.Snapshot.of(message))
+            "smEvent" -> if (!isJson) stateMachinePanel.logEvent(message)
         }
     }
 
@@ -789,6 +806,7 @@ class LottiePreviewPanel(
         override fun select(option: String?) {
             stateMachineId = option
             browser?.call("setStateMachine", option)
+            updateStateMachineTab()
         }
     }
 
@@ -803,13 +821,97 @@ class LottiePreviewPanel(
         }
     }
 
+    // ---- state machine ------------------------------------------------------------------------------------------------
+
+    /** The state machine the panel shows: the running one, or else the file's first. */
+    private val shownStateMachineId: String? get() = stateMachineId ?: archive?.manifest?.stateMachines?.firstOrNull()?.id
+
+    /** Adds or removes the State machine tab and shows the current definition in it. */
+    private fun updateStateMachineTab() {
+        val archive = archive ?: return
+        val index = sideTabs.indexOfComponent(stateMachinePanel)
+        if (archive.manifest.stateMachines.isEmpty()) {
+            if (index >= 0) sideTabs.removeTabAt(index)
+            return
+        }
+        if (index < 0) sideTabs.addTab(LottieBundle.message("sm.tab"), stateMachinePanel)
+        val id = shownStateMachineId
+        stateMachinePanel.showDefinition(id, id?.let { archive.stateMachineText(it) }?.let(StateMachine::parse))
+    }
+
+    private val stateMachineCallbacks = object : StateMachinePanel.Callbacks {
+        override fun setInput(name: String, type: InputType, value: Any?) {
+            browser?.call("smSetInput", name, type.json, value)
+        }
+
+        override fun fire(name: String) {
+            browser?.call("smFire", name)
+        }
+
+        override fun reset(name: String) {
+            browser?.call("smReset", name)
+        }
+
+        override fun restart() {
+            val id = shownStateMachineId ?: return
+            stateMachineId = id
+            browser?.call("setStateMachine", id)
+            updateToolbars()
+        }
+
+        override fun editJson() {
+            val id = shownStateMachineId ?: return
+            StateMachineDocuments.getInstance(project).open(file, id)
+        }
+
+        override fun addInput() {
+            val machine = currentStateMachine() ?: return
+            val dialog = StateMachineInputDialog(project, null, machine.inputs.map { it.name }.toSet())
+            if (!dialog.showAndGet()) return
+            val input = dialog.result
+            editStateMachine(LottieBundle.message("sm.command.add.input")) { it.addInput(input) }
+        }
+
+        override fun editInput(input: StateMachineInput) {
+            val machine = currentStateMachine() ?: return
+            val dialog = StateMachineInputDialog(project, input, machine.inputs.map { it.name }.toSet())
+            if (!dialog.showAndGet()) return
+            val edited = dialog.result
+            editStateMachine(LottieBundle.message("sm.command.edit.input")) {
+                var m = it
+                if (edited.name != input.name) m = m.renameInput(input.name, edited.name)
+                if (edited.value != input.value) m = m.setInitialValue(edited.name, edited.value)
+                m
+            }
+        }
+
+        override fun deleteInput(input: StateMachineInput) {
+            editStateMachine(LottieBundle.message("sm.command.delete.input")) { it.deleteInput(input.name) }
+        }
+    }
+
+    /** The shown state machine as the file on disk has it now (edits waiting in an open JSON document written first). */
+    private fun currentStateMachine(): StateMachine? {
+        val id = shownStateMachineId ?: return null
+        StateMachineDocuments.getInstance(project).flush(file)
+        return runCatching { DotLottieArchive.read(file.contentsToByteArray()).stateMachineText(id) }.getOrNull()?.let(StateMachine::parse)
+    }
+
+    /** Changes the shown state machine in the `.lottie` file as one undoable command; the preview reloads and restarts it. */
+    private fun editStateMachine(command: String, change: (StateMachine) -> StateMachine) {
+        val id = shownStateMachineId ?: return
+        val machine = currentStateMachine() ?: return
+        val changed = change(machine)
+        DotLottieFiles.replaceEntries(project, file, mapOf(StateMachineVirtualFile.entryPath(id) to changed.toJson().toByteArray(Charsets.UTF_8)), command)
+    }
+
     private inner class DetailsToggleAction : DumbAwareToggleAction(LottieBundle.message("action.details"), null, AllIcons.Actions.PreviewDetails) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun isSelected(e: AnActionEvent) = detailsVisible
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             detailsVisible = state
             PropertiesComponent.getInstance().setValue(DETAILS_VISIBLE_KEY, state, true)
-            splitter.secondComponent = detailsScroll.takeIf { state }
+            splitter.secondComponent = sideTabs.takeIf { state }
         }
     }
 

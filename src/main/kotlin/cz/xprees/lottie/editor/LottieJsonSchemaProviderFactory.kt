@@ -9,13 +9,32 @@ import com.jetbrains.jsonSchema.extension.SchemaType
 import com.jetbrains.jsonSchema.impl.JsonSchemaVersion
 import cz.xprees.lottie.LottieBundle
 import cz.xprees.lottie.lang.LottieFiles
+import cz.xprees.lottie.statemachine.StateMachineVirtualFile
 
 /**
  * Validation and completion for Lottie JSON files from the Lottie Animation Community schema (bundled, see THIRD_PARTY_NOTICES.md),
  * applied automatically to every file recognized as Lottie.
  */
 class LottieJsonSchemaProviderFactory : JsonSchemaProviderFactory {
-    override fun getProviders(project: Project): List<JsonSchemaFileProvider> = listOf(LottieSchemaProvider)
+    override fun getProviders(project: Project): List<JsonSchemaFileProvider> = listOf(LottieSchemaProvider, StateMachineSchemaProvider)
+
+    /** dotLottie state machine files opened from a `.lottie` archive (a schema written after the dotLottie 2.0 spec). */
+    private object StateMachineSchemaProvider : JsonSchemaFileProvider {
+        override fun isAvailable(file: VirtualFile) = file is StateMachineVirtualFile
+
+        override fun getName() = LottieBundle.message("schema.state.machine.name")
+
+        override fun getPresentableName() = LottieBundle.message("schema.state.machine.name")
+
+        override fun getSchemaFile(): VirtualFile? =
+            LottieJsonSchemaProviderFactory::class.java.getResource("/schemas/dotlottie-state-machine.schema.json")?.let(VfsUtil::findFileByURL)
+
+        override fun getSchemaType() = SchemaType.embeddedSchema
+
+        override fun getSchemaVersion() = JsonSchemaVersion.SCHEMA_7
+
+        override fun getRemoteSource() = "https://dotlottie.io/spec/2.0/"
+    }
 
     private object LottieSchemaProvider : JsonSchemaFileProvider {
         override fun isAvailable(file: VirtualFile) = LottieFiles.isLottieJson(file)

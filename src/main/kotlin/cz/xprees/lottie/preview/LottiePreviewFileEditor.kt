@@ -1,5 +1,8 @@
 package cz.xprees.lottie.preview
 
+import com.intellij.openapi.command.undo.DocumentReference
+import com.intellij.openapi.command.undo.DocumentReferenceManager
+import com.intellij.openapi.command.undo.DocumentReferenceProvider
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
@@ -12,13 +15,17 @@ import java.beans.PropertyChangeListener
 import javax.swing.JComponent
 
 /** The preview as a file editor: the right half of the Lottie JSON split editor, or the whole editor of a `.lottie` file. */
-class LottiePreviewFileEditor(project: Project, private val file: VirtualFile, document: Document?) : UserDataHolderBase(), FileEditor {
+class LottiePreviewFileEditor(project: Project, private val file: VirtualFile, document: Document?) :
+    UserDataHolderBase(), FileEditor, DocumentReferenceProvider {
 
     val panel = LottiePreviewPanel(project, file, document, this)
 
     override fun getComponent(): JComponent = panel
 
     override fun getPreferredFocusedComponent(): JComponent = panel
+
+    /** Undo and redo in this editor apply to its file: edits of a `.lottie` file (state machine inputs) are undoable here. */
+    override fun getDocumentReferences(): Collection<DocumentReference> = listOf(DocumentReferenceManager.getInstance().create(file))
 
     override fun getName(): String = LottieBundle.message("editor.preview.name")
 
