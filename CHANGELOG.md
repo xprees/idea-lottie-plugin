@@ -4,6 +4,19 @@
 
 ### Added
 
+- A *Code* tab in the preview with ready-to-copy code for the open animation: load it, play each marker, react when playback
+  enters a marker, start the state machine, set each input and listen to its custom events. For dotLottie Web and React,
+  lottie-web, Lottie React Native, dotLottie Android (Compose, View), Lottie Android and Compose, dotLottie iOS, Lottie iOS and
+  Flutter; the platform is guessed from the project's build files and can be changed per project
+- Recolor from the palette: clicking a color opens a color picker that changes every use of it at once (static values, keyframes,
+  gradient stops, solid layers and text), in Lottie JSON and `.lottie` files, as one undoable change. For dotLottie 2.0 files the
+  new color can be saved in a new or existing theme instead (the colors become slots); the palette shows the selected theme's
+  colors. Alt+click walks through the uses as before
+
+## [2026.3.2] - 2026-11-17
+
+### Added
+
 - Lottie `.json` files are recognized by their content (or a `*.lottie.json` name) and get their own icon; they stay JSON files
 - `.lottie` (dotLottie 1.0 and 2.0) files get their own file type and icon
 - Lottie JSON opens in a split editor like SVG: the JSON editor next to a live preview, with *Editor*, *Editor and Preview* and
@@ -28,14 +41,6 @@
 - Inlay hints naming Lottie codes: layer and shape types, blend and matte modes, parent layers, in/out points and keyframe times in
   seconds, layer names in front of layer objects
 - The layer at the caret is outlined in the preview, and clicking the preview moves the caret to the layer under the mouse
-- A *Code* tab in the preview with ready-to-copy code for the open animation: load it, play each marker, react when playback
-  enters a marker, start the state machine, set each input and listen to its custom events. For dotLottie Web and React,
-  lottie-web, Lottie React Native, dotLottie Android (Compose, View), Lottie Android and Compose, dotLottie iOS, Lottie iOS and
-  Flutter; the platform is guessed from the project's build files and can be changed per project
-- Recolor from the palette: clicking a color opens a color picker that changes every use of it at once (static values, keyframes,
-  gradient stops, solid layers and text), in Lottie JSON and `.lottie` files, as one undoable change. For dotLottie 2.0 files the
-  new color can be saved in a new or existing theme instead (the colors become slots); the palette shows the selected theme's
-  colors. Alt+click walks through the uses as before
 - A *State machine* tab for interactive dotLottie files: the running machine's state, its inputs with live values to set, reset or
   fire, and a log of transitions, input changes and custom events
 - State machine inputs are added, edited, renamed (with every reference) and deleted from the panel, as undoable edits of the archive
@@ -53,3 +58,6 @@
 - *Settings › Languages & Frameworks › Lottie*
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
+
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...HEAD
+[2026.3.2]: https://github.com/xprees/idea-lottie-plugin/commits/2026.3.2
