@@ -1,7 +1,6 @@
 package cz.xprees.lottie.actions
 
 import com.intellij.icons.AllIcons
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -9,9 +8,8 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -71,7 +69,7 @@ class ExtractAnimationAction : DumbAwareAction(
             val name = LottieFiles.uniqueName(directory, base, "json")
             directory.createChildData(this, name).also { VfsUtilCore.saveText(it, json) }
         }
-        FileEditorManager.getInstance(project).openFile(created, true)
+        OpenFileDescriptor(project, created).navigate(true)
     }
 }
 
@@ -121,15 +119,12 @@ class PackDotLottieAction : DumbAwareAction(
                     val name = LottieFiles.uniqueName(directory, base, "lottie")
                     directory.createChildData(this, name).also { it.setBinaryContent(archive) }
                 }
-                FileEditorManager.getInstance(project).openFile(created, true)
+                OpenFileDescriptor(project, created).navigate(true)
             }
         })
     }
 
-    private fun generator(): String {
-        val version = PluginManagerCore.getPlugin(PluginId.getId("cz.xprees.lottie"))?.version
-        return listOfNotNull("Lottie for JetBrains IDEs", version).joinToString(" ")
-    }
+    private fun generator(): String = "Lottie for JetBrains IDEs"
 }
 
 internal object LottieNotifications {

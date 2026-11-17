@@ -6,6 +6,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
+import com.intellij.ui.jcef.utils.JBCefStreamResourceHandler
 import cz.xprees.lottie.json.MiniJson
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
@@ -16,6 +17,7 @@ import org.cef.handler.CefResourceRequestHandler
 import org.cef.handler.CefResourceRequestHandlerAdapter
 import org.cef.misc.BoolRef
 import org.cef.network.CefRequest
+import java.io.ByteArrayInputStream
 import javax.swing.JComponent
 
 /**
@@ -92,12 +94,20 @@ internal class PreviewBrowser(
                 LOG.debug("Lottie preview: no resource for $path")
                 return blocked()
             }
-            return BytesResourceHandler(bytes, mimeType(path))
+            return stream(bytes, mimeType(path))
         }
     }
 
     /** An empty response for anything the page may not load. */
-    private fun blocked(): CefResourceHandler = BytesResourceHandler(ByteArray(0), "text/plain", 404)
+    private fun blocked(): CefResourceHandler = stream(ByteArray(0), "text/plain")
+
+    /**
+     * The platform's handler, built against each IDE's own JCEF: newer JCEF versions add abstract methods to CefResourceHandler
+     * (open/read/skip) that a handler compiled against the oldest supported IDE can't implement. It disposes itself once the
+     * response has been read or the request is cancelled.
+     */
+    private fun stream(bytes: ByteArray, mimeType: String): CefResourceHandler =
+        JBCefStreamResourceHandler(ByteArrayInputStream(bytes), mimeType, this, mapOf("Cache-Control" to "no-store"))
 
     private fun handle(message: Map<String, Any?>) {
         if (message["type"] == "ready") {
