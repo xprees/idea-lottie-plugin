@@ -177,4 +177,5 @@ security problems privately as described in [SECURITY.md](SECURITY.md).
 
 Apache-2.0, see [LICENSE](LICENSE). The bundled player and schema are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 "Lottie" is used here only to name the file format; the plugin is not affiliated with Airbnb, LottieFiles or the Lottie Animation
-Community.
+Community. The plugin and file icons are original artwork made for this plugin and licensed with it under Apache-2.0; they are not
+the Lottie, LottieFiles or dotLottie logos.

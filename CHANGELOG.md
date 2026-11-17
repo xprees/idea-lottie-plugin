@@ -4,7 +4,7 @@
 
 ### Added
 
-- Lottie `.json` files are recognized by their content (or a `*.lottie.json` name) and get the Lottie icon; they stay JSON files
+- Lottie `.json` files are recognized by their content (or a `*.lottie.json` name) and get their own icon; they stay JSON files
 - `.lottie` (dotLottie 1.0 and 2.0) files get their own file type and icon
 - Lottie JSON opens in a split editor like SVG: the JSON editor next to a live preview, with *Editor*, *Editor and Preview* and
   *Preview* layouts. The preview follows edits, keeps the frame and playing state, and shows the last valid render with the parse
