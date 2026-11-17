@@ -33,6 +33,12 @@
                                               bundle="messages.LottieBundle" nameKey="inlay.provider.name"
                                               descriptionKey="inlay.provider.description"/>
 
+        <!-- dotLottie state machines opened as JSON from a .lottie file -->
+        <localInspection language="JSON" shortName="LottieStateMachineReferences" bundle="messages.LottieBundle"
+                         key="inspection.sm.references.name" groupKey="inspection.group.name"
+                         enabledByDefault="true" level="WARNING"
+                         implementationClass="cz.xprees.lottie.statemachine.StateMachineReferencesInspection"/>
+
         <notificationGroup id="Lottie" displayType="BALLOON" key="notification.group.name"/>
         <applicationConfigurable parentId="language" id="cz.xprees.lottie.settings"
                                  instance="cz.xprees.lottie.settings.LottieConfigurable"

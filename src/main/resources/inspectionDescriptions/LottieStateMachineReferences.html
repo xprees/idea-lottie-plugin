@@ -1,0 +1,11 @@
+<html>
+<body>
+Reports references in a dotLottie state machine (<code>s/&lt;id&gt;.json</code> opened from a <code>.lottie</code> file) that point nowhere:
+<ul>
+  <li>inputs that don't exist, or have the wrong type for the guard or action using them (also <code>$input</code> references)</li>
+  <li>unknown states in <code>initial</code>, <code>toState</code> and <code>stateName</code></li>
+  <li>animations, markers (<code>segment</code>), themes (<code>SetTheme</code>) and layers (<code>layerName</code>) the file doesn't contain</li>
+  <li>duplicate input names and unknown input types</li>
+</ul>
+</body>
+</html>

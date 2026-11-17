@@ -26,6 +26,12 @@
 - Inlay hints naming Lottie codes: layer and shape types, blend and matte modes, parent layers, in/out points and keyframe times in
   seconds, layer names in front of layer objects
 - The layer at the caret is outlined in the preview, and clicking the preview moves the caret to the layer under the mouse
+- A *State machine* tab for interactive dotLottie files: the running machine's state, its inputs with live values to set, reset or
+  fire, and a log of transitions, input changes and custom events
+- State machine inputs are added, edited, renamed (with every reference) and deleted from the panel, as undoable edits of the archive
+- *Edit State Machine as JSON* opens a state machine of a `.lottie` file in a JSON editor with a bundled schema and a check of its
+  references to states, inputs, animations, markers, themes and layers; valid edits are saved into the archive
+- *Copy Code* for state machine inputs and custom events, with the matching dotLottie web calls
 - *Extract Lottie JSON* from a `.lottie` file and *Pack as dotLottie* from a Lottie JSON file
 - *Settings › Languages & Frameworks › Lottie*
 

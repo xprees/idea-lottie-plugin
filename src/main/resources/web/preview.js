@@ -28,6 +28,8 @@ const state = {
   highlight: null,
   pickEnabled: false,
   loadToken: 0,
+  /** Id of the running dotLottie state machine. */
+  stateMachineId: null,
   speed: 1,
   loop: true,
   autoplayNext: true,
@@ -106,9 +108,26 @@ function attachEvents(player) {
   player.addEventListener('complete', () => { send({ type: 'playing', playing: false }); sendFrame(true); });
   player.addEventListener('loadError', (e) => send({ type: 'error', message: String(e.error?.message || e.error || 'The animation could not be loaded') }));
   player.addEventListener('renderError', (e) => send({ type: 'error', message: String(e.error?.message || e.error || 'The animation could not be rendered') }));
-  player.addEventListener('stateMachineStart', () => send({ type: 'stateMachine', running: true }));
-  player.addEventListener('stateMachineStop', () => send({ type: 'stateMachine', running: false }));
-  player.addEventListener('stateMachineError', (e) => send({ type: 'error', message: `State machine: ${e.error || e.message || 'error'}` }));
+  // State machine events go to the IDE's log as they happen, followed by a fresh snapshot (state, status, input values)
+  const smEvents = {
+    stateMachineStart: () => ({}),
+    stateMachineStop: () => ({}),
+    stateMachineTransition: (e) => ({ from: e.fromState, to: e.toState }),
+    stateMachineStateEntered: (e) => ({ state: e.state }),
+    stateMachineStateExit: (e) => ({ state: e.state }),
+    stateMachineCustomEvent: (e) => ({ name: e.eventName }),
+    stateMachineError: (e) => ({ error: String(e.error ?? '') }),
+    stateMachineBooleanInputValueChange: (e) => ({ input: e.inputName, from: e.oldValue, to: e.newValue }),
+    stateMachineNumericInputValueChange: (e) => ({ input: e.inputName, from: e.oldValue, to: e.newValue }),
+    stateMachineStringInputValueChange: (e) => ({ input: e.inputName, from: e.oldValue, to: e.newValue }),
+    stateMachineInputFired: (e) => ({ input: e.inputName }),
+  };
+  for (const [type, fields] of Object.entries(smEvents)) {
+    player.addEventListener(type, (e) => {
+      send({ type: 'smEvent', event: type.replace(/^stateMachine/, ''), ...fields(e) });
+      scheduleSmSnapshot();
+    });
+  }
 }
 
 /** After Effects markers exported by Bodymovin carry their name as JSON (`{"name":"intro"}`). */
@@ -120,6 +139,39 @@ function markerLabel(name) {
     } catch (e) { /* plain name */ }
   }
   return name;
+}
+
+let smSnapshotPending = false;
+
+/** One snapshot after a burst of state machine events (a transition fires several). */
+function scheduleSmSnapshot() {
+  if (smSnapshotPending) return;
+  smSnapshotPending = true;
+  setTimeout(() => {
+    smSnapshotPending = false;
+    send(smSnapshot());
+  }, 0);
+}
+
+/** The running state machine: id, status, current state and the inputs with their current values. */
+function smSnapshot() {
+  const p = state.player;
+  const running = !!(p && p.isStateMachineRunning);
+  const snapshot = { type: 'smState', id: state.stateMachineId, running, status: '', state: '', inputs: [] };
+  if (!p || !running) return snapshot;
+  snapshot.status = p.stateMachineGetStatus();
+  snapshot.state = p.stateMachineGetCurrentState();
+  const list = p.stateMachineGetInputs() || [];
+  for (let i = 0; i + 1 < list.length; i += 2) {
+    const name = list[i], type = list[i + 1];
+    if (name.startsWith('@')) continue; // the player's own inputs, such as @elapsedTime
+    let value = null;
+    if (type === 'Boolean') value = p.stateMachineGetBooleanInput(name);
+    else if (type === 'Numeric') value = p.stateMachineGetNumericInput(name);
+    else if (type === 'String') value = p.stateMachineGetStringInput(name);
+    snapshot.inputs.push({ name, type, value: value ?? null });
+  }
+  return snapshot;
 }
 
 function meta() {
@@ -204,7 +256,12 @@ const api = {
       applyZoom();
       if (options.marker) p.setMarker(options.marker);
       if (keep && frame > 0) p.setFrame(Math.min(frame, Math.max(0, p.totalFrames - 1)));
-      if (wasPlaying) p.play();
+      if (options.stateMachineId) {
+        // a reload (the file changed) starts the state machine again, with the new definition
+        api.setStateMachine(options.stateMachineId);
+      } else if (wasPlaying) {
+        p.play();
+      }
       send(meta());
       sendFrame(true);
       if (state.highlight != null) api.highlightLayer(state.highlight);
@@ -273,7 +330,31 @@ const api = {
     const p = state.player;
     if (!p) return;
     if (p.isStateMachineRunning) p.stateMachineStop();
-    if (id && p.stateMachineLoad(id)) p.stateMachineStart();
+    state.stateMachineId = id || null;
+    if (id) {
+      if (!p.stateMachineLoad(id)) send({ type: 'smEvent', event: 'Error', error: `The state machine '${id}' could not be loaded` });
+      else if (!p.stateMachineStart()) send({ type: 'smEvent', event: 'Error', error: `The state machine '${id}' could not be started` });
+    }
+    send(smSnapshot());
+  },
+  smSetInput(name, type, value) {
+    const p = state.player;
+    if (!p?.isStateMachineRunning) return;
+    if (type === 'Boolean') p.stateMachineSetBooleanInput(name, !!value);
+    else if (type === 'Numeric') p.stateMachineSetNumericInput(name, Number(value));
+    else if (type === 'String') p.stateMachineSetStringInput(name, String(value));
+    scheduleSmSnapshot();
+  },
+  smFire(name) {
+    if (state.player?.isStateMachineRunning) state.player.stateMachineFireEvent(name);
+    scheduleSmSnapshot();
+  },
+  smReset(name) {
+    if (state.player?.isStateMachineRunning) state.player.stateMachineResetInput(name);
+    scheduleSmSnapshot();
+  },
+  smRestart() {
+    api.setStateMachine(state.stateMachineId);
   },
   setPickEnabled(enabled) {
     state.pickEnabled = enabled;

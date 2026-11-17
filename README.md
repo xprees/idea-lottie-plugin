@@ -13,6 +13,8 @@ Support for <b>Lottie</b> animations in IntelliJ IDEA, WebStorm, Rider and other
       and per-layer in/out bars</li>
   <li><b>Markers</b>, the named moments and segments your code plays or reacts to, are added, renamed, moved and deleted right on
       the timeline</li>
+  <li><b>State machines</b> of interactive dotLottie files run in the preview: see the current state, drive the inputs, fire events,
+      watch the event log, add and edit inputs, and edit the state machine as JSON with validation</li>
   <li>Playback controls: play/pause, loop, speed, <b>markers</b> (play one segment), zoom, and a checkerboard, light, dark or
       custom background</li>
   <li>The animation's <b>color palette</b> above the preview; in JSON files, <b>color swatches</b> in the gutter open the color picker
@@ -54,6 +56,7 @@ count, so a pasted animation becomes Lottie as soon as it looks like one (reopen
 | dotLottie | Preview only (the file is binary). Toolbar pickers for the animation, theme (`t/`, applied through Lottie slots) and state machine (`s/`, interactive in the preview; URLs a state machine tries to open are blocked). A details panel lists the format version, generator, animations with their initial and scoped themes, themes, state machines and every file with its size |
 | Playback | In the timeline header: first/previous/play-pause/next/last frame, loop and speed (0.25×–4×). In the toolbar: marker picker (plays the marker's segment; After Effects JSON marker names are shown by name), zoom to fit / actual size / in / out (also Ctrl/⌘ + wheel), background: checkerboard, light, dark or a custom color |
 | Timeline | Under the preview: a frame ruler with the playhead, the markers (segments as bars, single-frame markers as flags) and, with *Show Layers in Timeline*, a lane per root layer with its in/out range. Press and drag anywhere to scrub (playback pauses while you scrub and resumes when you let go; Alt for fractional frames), hover for the frame and time, wheel over the ruler to step. With the timeline focused: ←/→ one frame, Shift+←/→ ten, Home/End, Space to play or pause. Double-click a marker to play only its segment; click a layer to select it (in JSON files the caret jumps to it and the preview outlines it) |
+| State machines | A *State machine* tab next to the dotLottie details: the current state and player status, every input with its live value (a checkbox, a text field or *Fire*), reset to the initial value, and a log of transitions, input changes and custom events. Clicking or hovering the preview drives the machine's interactions. Inputs are added, edited and deleted from the panel (renaming updates every guard and action that uses the input); each change is one undoable edit of the archive. *Edit State Machine as JSON* opens `s/<id>.json` in a JSON editor with the bundled state machine schema and an inspection for unknown states, inputs, animations, markers, themes and layers; valid edits are written back to the archive. Each input and the custom events have a *Copy Code* button with the dotLottie web call |
 | Markers | In JSON files markers are edited on the timeline: right-click the markers lane to add a marker at that frame or at the playhead, and a marker to rename it, move its start or end to the playhead or delete it; drag a marker's edge to change its range (a single-frame marker becomes a segment). *+* in the timeline header adds one at the playhead. Each edit is one undoable change to the `markers` array; marker names must be unique. In `.lottie` files markers are read-only (extract the JSON to edit them) |
 | Palette | The distinct colors of the animation (fills, strokes, gradient stops, solid layers, text, color effects and the color slots they use) as swatches above the preview, with their uses in the tooltip. In JSON files a click walks the caret through the places the color is defined; the context menu copies it as hex or as a Lottie array |
 | Color swatches | In JSON files, a gutter swatch next to every color value: `[r, g, b(, a)]` arrays of fills, strokes, text, color effects and slots, and the `"#rrggbb"` of solid layers. Clicking it opens the color picker; the new color is written back in the file's own form (0..1 components, or 0..255 for old exports; alpha kept when present). Positions, scales and other number triples get no swatch |
@@ -80,8 +83,24 @@ single moment). Add them on the timeline, then refer to them by name in code, fo
 To *react* when playback reaches a marker, compare the current frame with the marker's start in the player's frame callback (for
 example dotLottie web's `frame` event, which carries `currentFrame`, together with `dotLottie.markers()`), or play the marker's segment
 and wait for the `complete` event. The names you give markers are the names your code uses, so the timeline refuses duplicates.
-(Interactive dotLottie files can also carry state machines with their own inputs and events; those are shown and run in the preview but
-not edited.)
+
+## State machine inputs and events
+
+Interactive dotLottie files (format 2.0) carry state machines in `s/`: states that play animations or segments, transitions guarded by
+**inputs**, and actions that change inputs or fire **custom events**. Inputs are the API between the animation and your code: your code
+sets them, and the animation reports back through events. The *State machine* tab runs the machine in the preview so you can try
+both directions, and *Copy Code* gives the matching dotLottie web call, for example:
+
+```js
+dotLottie.stateMachineLoad('toggle');
+dotLottie.stateMachineStart();
+dotLottie.stateMachineSetBooleanInput('isOn', true);
+dotLottie.stateMachineSetNumericInput('clicks', 3);
+dotLottie.stateMachineFireEvent('reset');
+dotLottie.addEventListener('stateMachineCustomEvent', (event) => {
+  if (event.eventName === 'switched-on') { /* react */ }
+});
+```
 
 ## Settings
 
@@ -106,6 +125,8 @@ not edited.)
 - Gradient stops appear in the palette but have no gutter swatch: a gradient is one array holding every stop.
 - Layer outlining and picking work on root layers of JSON files. A layer is found by rendering it alone, so a layer that is only
   visible through effects of other layers may not be found.
+- State machines are edited as JSON (with schema and checks) and through their inputs; there is no graphical editor of states and
+  transitions.
 - The palette is read-only for now. Recoloring the animation (for example as a dotLottie theme) is planned.
 
 ## How it works
