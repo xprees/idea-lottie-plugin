@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Lottie or dotLottie files doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check the [known limitations](https://github.com/xprees/idea-lottie-plugin#known-limitations)
+        and existing issues first. Security problems go through [private reporting](https://github.com/xprees/idea-lottie-plugin/security/policy), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample file
+      description: Attach the smallest .json or .lottie file that shows the problem (zip it if GitHub refuses the extension), or link to it.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Preview rendering or playback
+        - dotLottie (themes, state machines, details panel)
+        - Recognizing Lottie files, icons
+        - Palette or color swatches
+        - Schema, structure view or inlay hints
+        - Extract or Pack
+        - Settings
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings › Plugins › Installed › Lottie
+      placeholder: "0.1.3"
+    validations:
+      required: true
+  - type: input
+    id: ide
+    attributes:
+      label: IDE and version
+      description: Help › About (the first lines are enough), and your operating system.
+      placeholder: IntelliJ IDEA 2026.3 (IU-263.7307.202), macOS 26
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Exceptions or logs
+      description: Stack traces from the IDE error reporter or idea.log (Help › Show Log in ...).
+      render: text

@@ -1,0 +1,12 @@
+<!-- Loaded only in Rider. The actions are declared in plugin.xml; this adds them to the Solution Explorer context menu, which
+     Rider does not build from ProjectViewPopupMenu. -->
+<idea-plugin>
+    <actions>
+        <reference ref="cz.xprees.lottie.ExtractAnimation">
+            <add-to-group group-id="SolutionExplorerPopupMenu" anchor="after" relative-to-action="SolutionExplorerPopupMenu.Edit"/>
+        </reference>
+        <reference ref="cz.xprees.lottie.PackDotLottie">
+            <add-to-group group-id="SolutionExplorerPopupMenu" anchor="after" relative-to-action="cz.xprees.lottie.ExtractAnimation"/>
+        </reference>
+    </actions>
+</idea-plugin>
