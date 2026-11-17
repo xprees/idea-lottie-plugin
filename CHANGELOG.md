@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.3] - 2026-11-17
+
 ### Added
 
 - A *Code* tab in the preview with ready-to-copy code for the open animation: load it, play each marker, react when playback
@@ -59,5 +61,6 @@
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
 
-[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...HEAD
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.3...HEAD
+[2026.3.3]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...2026.3.3
 [2026.3.2]: https://github.com/xprees/idea-lottie-plugin/commits/2026.3.2
