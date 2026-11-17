@@ -240,4 +240,20 @@ class OptimizerTest {
         val assets = MiniJson.parse(result.animationText("x")!!).obj()!!["assets"].arr()!!.map { it.obj()!!["p"] }
         assertThat(assets).containsExactly("a.png", "a.png")
     }
+
+    // ---- how sizes are shown --------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `formats savings for the dialog and the report`() {
+        val p = cz.xprees.lottie.optimize.OptimizeDialog.Companion
+        assertThat(p.percent(6_400, 10_000)).isEqualTo("−64%")
+        assertThat(p.percent(9_970, 10_000)).isEqualTo("−99.7%")
+        assertThat(p.percent(10_000, 10_000)).isEqualTo("−100%")
+        assertThat(p.percent(5, 10_000)).isEqualTo("−<1%")
+        assertThat(p.percent(-300, 10_000)).isEqualTo("+3%")
+        assertThat(p.percent(0, 10_000)).isEqualTo("0%")
+        assertThat(p.signed(0)).doesNotStartWith("−").doesNotStartWith("+")
+        assertThat(p.signed(-2048)).startsWith("+")
+        assertThat(p.share(0.0052)).isEqualTo("0.52%")
+    }
 }

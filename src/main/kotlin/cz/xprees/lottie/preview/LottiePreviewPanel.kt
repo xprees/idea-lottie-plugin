@@ -141,7 +141,7 @@ class LottiePreviewPanel(
 
     // ---- UI -----------------------------------------------------------------------------------------------------------
     private val browser: PreviewBrowser? = if (JcefSupport.isAvailable()) {
-        PreviewBrowser(this, ::initConfig, { data }, ::onMessage)
+        PreviewBrowser(this, ::initConfig, { _ -> data }, ::onMessage)
     } else {
         null
     }

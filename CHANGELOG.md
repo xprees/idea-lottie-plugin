@@ -35,7 +35,8 @@
 - *Copy Code* for state machine inputs and custom events, with the matching dotLottie web calls
 - *Optimize Lottie…* for Lottie JSON and `.lottie` files, with the size before, after each step and in total: lossless cleanup,
   rounding, hidden layer removal and image compression (scaled down, PNG/JPEG or WebP encoded by the IDE's embedded browser), saved
-  as a copy or in place (undoable)
+  as a copy or in place (undoable); a frame comparison renders the animation before and after and asks before writing a result that
+  looks different
 - The preview's info line shows the file size (and the animation JSON's size for `.lottie` files)
 - *Convert to dotLottie 2.0* for dotLottie 1.0 files (context menu and a banner over the file): moves animations, images and audio
   to the 2.0 folders, writes a 2.0 manifest, and reports the 1.0 settings 2.0 cannot hold; undoable

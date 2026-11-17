@@ -5,6 +5,10 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.wm.IdeFocusManager
+import com.intellij.openapi.editor.ScrollType
+import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAwareAction
@@ -68,8 +72,19 @@ class OptimizeLottieAction : DumbAwareAction(
         }
         val document = FileDocumentManager.getInstance().getDocument(file) ?: return
         val psiFile = PsiManager.getInstance(project).findFile(file)
+        val editors = EditorFactory.getInstance().getEditors(document, project)
         WriteCommandAction.writeCommandAction(project, psiFile).withName(command).run<RuntimeException> {
             document.setText(result.bytes.toString(Charsets.UTF_8))
+            // the caret where the change is (the whole document): undo restores this editor state before it reverts the change,
+            // so with the caret left here a single Ctrl+Z undoes the optimization
+            editors.forEach {
+                it.caretModel.moveToOffset(0)
+                it.scrollingModel.scrollToCaret(ScrollType.MAKE_VISIBLE)
+            }
+        }
+        // back to the text editor, so Ctrl+Z goes to it (the action ran from a popup and a dialog)
+        editors.firstOrNull { it.component.isShowing }?.let { editor ->
+            ApplicationManager.getApplication().invokeLater { IdeFocusManager.getInstance(project).requestFocus(editor.contentComponent, true) }
         }
     }
 

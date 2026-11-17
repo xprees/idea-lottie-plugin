@@ -2,6 +2,7 @@ package cz.xprees.lottie.preview
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefBrowser
@@ -26,16 +27,23 @@ import javax.swing.JComponent
  * navigations are refused, so a Lottie file can't make the IDE fetch anything.
  *
  * Messages from the page arrive in [onMessage] on the EDT; [call] runs `lottiePreview.<method>(args)` once the page is ready.
+ *
+ * [page] is the page to load (`web/…`); `data/<name>` requests are answered by [dataProvider] with the name. An [offscreen] browser
+ * is created at once and works without being shown (the frame comparison of the optimizer); its messages are delivered even while
+ * a modal dialog is open.
  */
 internal class PreviewBrowser(
     parent: Disposable,
     private val initConfig: () -> Map<String, Any?>,
-    private val dataProvider: () -> ByteArray?,
+    private val dataProvider: (name: String) -> ByteArray?,
     private val onMessage: (Map<String, Any?>) -> Unit,
+    private val page: String = "web/preview.html",
+    private val offscreen: Boolean = false,
 ) : Disposable {
 
     private val browser = JBCefBrowser.createBuilder()
         .setEnableOpenDevToolsMenuItem(ApplicationManager.getApplication().isInternal)
+        .apply { if (offscreen) setOffScreenRendering(true) }
         .build()
     private val query = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
     private var ready = false
@@ -52,7 +60,8 @@ internal class PreviewBrowser(
             val message = MiniJson.parseOrNull(json) as? Map<*, *>
             if (message != null) {
                 @Suppress("UNCHECKED_CAST")
-                ApplicationManager.getApplication().invokeLater({ if (!disposed) handle(message as Map<String, Any?>) }, { disposed })
+                val modality = if (offscreen) ModalityState.any() else ModalityState.defaultModalityState()
+                ApplicationManager.getApplication().invokeLater({ if (!disposed) handle(message as Map<String, Any?>) }, modality, { disposed })
             }
             null
         }
@@ -77,7 +86,8 @@ internal class PreviewBrowser(
             }
         }, browser.cefBrowser)
 
-        browser.loadURL("${ORIGIN}web/preview.html")
+        if (offscreen) browser.createImmediately()
+        browser.loadURL("$ORIGIN$page")
     }
 
     private val resourceHandler = object : CefResourceRequestHandlerAdapter() {
@@ -86,7 +96,7 @@ internal class PreviewBrowser(
             if (!url.startsWith(ORIGIN)) return blocked()
             val path = url.removePrefix(ORIGIN).substringBefore('?').substringBefore('#')
             val bytes: ByteArray? = when {
-                path.startsWith("data/") -> dataProvider()
+                path.startsWith("data/") -> dataProvider(path.removePrefix("data/"))
                 path.startsWith("web/") && !path.contains("..") -> PreviewBrowser::class.java.getResourceAsStream("/$path")?.use { it.readBytes() }
                 else -> null
             }

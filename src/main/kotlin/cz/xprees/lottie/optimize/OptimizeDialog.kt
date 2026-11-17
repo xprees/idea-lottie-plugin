@@ -15,6 +15,8 @@ import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.AlignY
+import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.Alarm
@@ -23,6 +25,14 @@ import com.intellij.util.ui.UIUtil
 import cz.xprees.lottie.LottieBundle
 import cz.xprees.lottie.lang.LottieFiles
 import java.awt.event.ActionEvent
+import javax.swing.SwingConstants
+import javax.swing.JPanel
+import javax.swing.JButton
+import javax.swing.ImageIcon
+import java.awt.FlowLayout
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import java.util.Locale
 import javax.swing.AbstractAction
 import javax.swing.Action
@@ -71,6 +81,25 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         selectedItem = properties.getInt(KEY_SCALE, 2)
     }
 
+    private val compareFirst = JBCheckBox(LottieBundle.message("optimize.compare.check"), properties.getBoolean(KEY_COMPARE, true)).apply {
+        isVisible = FrameComparer.isAvailable()
+    }
+    private val compareButton = JButton(LottieBundle.message("optimize.compare")).apply {
+        isVisible = FrameComparer.isAvailable()
+        addActionListener { estimate?.second?.let { compareInBackground(it) } }
+    }
+    private val compareLabel = JBLabel()
+    private val originalImage = JBLabel(LottieBundle.message("optimize.compare.original")).apply { verticalTextPosition = SwingConstants.BOTTOM; horizontalTextPosition = SwingConstants.CENTER }
+    private val optimizedImage = JBLabel(LottieBundle.message("optimize.compare.optimized")).apply { verticalTextPosition = SwingConstants.BOTTOM; horizontalTextPosition = SwingConstants.CENTER }
+    private val framePanel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(12), 0)).apply {
+        add(originalImage)
+        add(optimizedImage)
+        isVisible = false
+    }
+
+    /** The last frame comparison and the optimization it compared. */
+    @Volatile private var comparison: Pair<OptimizeResult, FrameComparison>? = null
+
     private val totalLabel = JBLabel()
     private val stepsLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val removedLabel = JBLabel().apply { foreground = JBColor.namedColor("Label.warningForeground", JBColor.ORANGE) }
@@ -85,10 +114,7 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         private set
 
     private val inPlaceAction = object : AbstractAction(LottieBundle.message("optimize.in.place")) {
-        override fun actionPerformed(e: ActionEvent?) {
-            mode = Mode.IN_PLACE
-            doOKAction()
-        }
+        override fun actionPerformed(e: ActionEvent?) = finish(Mode.IN_PLACE)
     }
 
     init {
@@ -125,9 +151,23 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
             }
         }
         group(LottieBundle.message("optimize.group.result")) {
-            row { cell(totalLabel) }
-            row { cell(stepsLabel).align(AlignX.FILL) }
-            row { cell(removedLabel).align(Align.FILL) }
+            // the sizes on the left, the compared frame next to them (so comparing doesn't make the dialog taller)
+            val sizes = JPanel(VerticalLayout(JBUI.scale(6))).apply {
+                add(totalLabel)
+                add(stepsLabel)
+                add(removedLabel)
+            }
+            row {
+                cell(sizes).align(AlignY.TOP)
+                cell(framePanel).align(AlignY.TOP)
+            }
+            if (FrameComparer.isAvailable()) {
+                row {
+                    cell(compareButton)
+                    cell(compareLabel).align(AlignX.FILL)
+                }
+                row { cell(compareFirst) }
+            }
         }
     }.apply { border = JBUI.Borders.empty(4) }
 
@@ -151,6 +191,7 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         totalLabel.text = LottieBundle.message("optimize.estimating")
         okAction.isEnabled = false
         inPlaceAction.isEnabled = false
+        compareButton.isEnabled = false
         alarm.cancelAllRequests()
         alarm.addRequest({
             val r = runCatching { run(options) }
@@ -168,19 +209,94 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         if (isJson) Optimizer.optimizeJson(text!!, options, webp) else Optimizer.optimizeDotLottie(bytes!!, options, webp)
 
     private fun show(r: OptimizeResult) {
-        totalLabel.text = "<html>" + LottieBundle.message("optimize.total", StringUtil.formatFileSize(r.sizeBefore), StringUtil.formatFileSize(r.sizeAfter), percent(r.saved, r.sizeBefore)) +
-            (r.packedSize?.let { "&nbsp;&nbsp;&nbsp;" + LottieBundle.message("optimize.packed", StringUtil.formatFileSize(it)) } ?: "") + "</html>"
-        stepsLabel.text = "<html>" + r.savings.joinToString("<br>") { (step, saved) -> "${stepName(step)}: ${signed(saved)} (${percent(saved, r.sizeBefore)})" } +
+        // HTML labels: escape what we insert ("<1%" would start a tag)
+        fun html(text: String) = StringUtil.escapeXmlEntities(text)
+        totalLabel.text = "<html>" + LottieBundle.message("optimize.total", html(StringUtil.formatFileSize(r.sizeBefore)), html(StringUtil.formatFileSize(r.sizeAfter)), html(percent(r.saved, r.sizeBefore))) +
+            (r.packedSize?.let { "&nbsp;&nbsp;&nbsp;" + html(LottieBundle.message("optimize.packed", StringUtil.formatFileSize(it))) } ?: "") + "</html>"
+        stepsLabel.text = "<html>" + r.savings.joinToString("<br>") { (step, saved) -> html("${stepName(step)}: ${signed(saved)} (${percent(saved, r.sizeBefore)})") } +
             (if (r.imagesChanged > 0) "<br>" + LottieBundle.message("optimize.images.changed", r.imagesChanged) else "") + "</html>"
         removedLabel.text = if (r.layersRemoved.isEmpty()) "" else "<html>" + StringUtil.escapeXmlEntities(LottieBundle.message("optimize.removed", r.layersRemoved.joinToString(", "))) + "</html>"
         okAction.isEnabled = true
         inPlaceAction.isEnabled = r.saved > 0
+        compareButton.isEnabled = true
+        if (comparison?.first !== r) {
+            compareLabel.text = ""
+            framePanel.isVisible = false
+        }
     }
 
-    override fun doOKAction() {
+    private fun originalBytes(): ByteArray = text?.toByteArray(Charsets.UTF_8) ?: bytes!!
+
+    private fun compareInBackground(r: OptimizeResult) {
+        compareButton.isEnabled = false
+        compareLabel.foreground = UIUtil.getContextHelpForeground()
+        compareLabel.text = LottieBundle.message("optimize.compare.running")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val outcome = runCatching { FrameComparer.compare(originalBytes(), r.bytes, isJson) }
+            ApplicationManager.getApplication().invokeLater({
+                compareButton.isEnabled = true
+                outcome.onSuccess { showComparison(r, it) }
+                    .onFailure { compareLabel.text = LottieBundle.message("optimize.compare.failed", it.message ?: it.toString()) }
+            }, ModalityState.stateForComponent(contentPane))
+        }
+    }
+
+    private fun showComparison(r: OptimizeResult, c: FrameComparison) {
+        comparison = r to c
+        val where = c.worstAnimation?.let { LottieBundle.message("optimize.compare.animation", it) }.orEmpty()
+        compareLabel.text = if (c.significant) {
+            LottieBundle.message("optimize.compare.differs", c.worstFrame, where, share(c.worstShare), c.frames)
+        } else {
+            LottieBundle.message("optimize.compare.same", c.frames, share(c.worstShare))
+        }
+        compareLabel.foreground = if (c.significant) JBColor.namedColor("Label.warningForeground", JBColor.ORANGE) else UIUtil.getLabelForeground()
+        originalImage.icon = c.original?.let(::thumbnail)
+        optimizedImage.icon = c.optimized?.let(::thumbnail)
+        framePanel.isVisible = c.original != null && c.optimized != null
+    }
+
+    private fun thumbnail(image: java.awt.image.BufferedImage): ImageIcon {
+        val size = JBUI.scale(THUMBNAIL)
+        val ratio = minOf(size.toDouble() / image.width, size.toDouble() / image.height)
+        return ImageIcon(image.getScaledInstance((image.width * ratio).toInt().coerceAtLeast(1), (image.height * ratio).toInt().coerceAtLeast(1), java.awt.Image.SCALE_SMOOTH))
+    }
+
+    override fun doOKAction() = finish(Mode.COPY)
+
+    /**
+     * Closes the dialog with [mode]. In place, with *Compare frames* on, the frames are compared first (unless they already were
+     * for this result), and a visible difference has to be confirmed.
+     */
+    private fun finish(mode: Mode) {
         val options = options()
-        val ready = estimate?.takeIf { it.first == options }?.second
-        result = ready ?: run(options)
+        val ready = estimate?.takeIf { it.first == options }?.second ?: run(options)
+        if (mode == Mode.IN_PLACE && compareFirst.isVisible && compareFirst.isSelected) {
+            val c = comparison?.takeIf { it.first === ready }?.second ?: try {
+                ProgressManager.getInstance().runProcessWithProgressSynchronously<FrameComparison, Exception>(
+                    { FrameComparer.compare(originalBytes(), ready.bytes, isJson) },
+                    LottieBundle.message("optimize.compare.running"), true, project,
+                ).also { showComparison(ready, it) }
+            } catch (e: ProcessCanceledException) {
+                return
+            } catch (e: Exception) {
+                compareLabel.text = LottieBundle.message("optimize.compare.failed", e.message ?: e.toString())
+                null
+            }
+            if (c != null && c.significant) {
+                val where = c.worstAnimation?.let { LottieBundle.message("optimize.compare.animation", it) }.orEmpty()
+                val proceed = Messages.showYesNoDialog(
+                    project,
+                    LottieBundle.message("optimize.compare.confirm", c.worstFrame, where, share(c.worstShare)),
+                    LottieBundle.message("optimize.compare.confirm.title"),
+                    LottieBundle.message("optimize.in.place.anyway"),
+                    Messages.getCancelButton(),
+                    Messages.getWarningIcon(),
+                ) == Messages.YES
+                if (!proceed) return
+            }
+        }
+        this.mode = mode
+        result = ready
         properties.setValue(KEY_CLEANUP, cleanup.isSelected, true)
         properties.setValue(KEY_ROUND, round.isSelected, true)
         properties.setValue(KEY_DECIMALS, decimals.value as Int, 3)
@@ -189,6 +305,7 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         properties.setValue(KEY_TARGET, (target.selectedItem as ImageTarget).name, ImageTarget.KEEP.name)
         properties.setValue(KEY_QUALITY, quality.value as Int, 80)
         properties.setValue(KEY_SCALE, scale.selectedItem as Int, 2)
+        properties.setValue(KEY_COMPARE, compareFirst.isSelected, true)
         super.doOKAction()
     }
 
@@ -202,6 +319,11 @@ class OptimizeDialog(private val project: Project, private val file: VirtualFile
         private const val KEY_TARGET = "cz.xprees.lottie.optimize.target"
         private const val KEY_QUALITY = "cz.xprees.lottie.optimize.quality"
         private const val KEY_SCALE = "cz.xprees.lottie.optimize.scale"
+        private const val KEY_COMPARE = "cz.xprees.lottie.optimize.compare"
+        private const val THUMBNAIL = 96
+
+        /** 0.0123 → "1.23%". */
+        fun share(value: Double): String = String.format(Locale.ROOT, "%.2f%%", value * 100)
 
         fun stepName(step: OptimizeStep): String = LottieBundle.message("optimize.step.${step.name.lowercase(Locale.ROOT)}")
 
