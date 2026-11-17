@@ -75,7 +75,8 @@ The README's [How it works](README.md#how-it-works) section explains the preview
 ## Building and running
 
 ```shell
-./gradlew runIde          # a sandbox IDE with the plugin installed
+./gradlew runIde          # a sandbox IDE with the plugin installed (the oldest supported IDE)
+./gradlew runIdeLatest    # the same in the newest IDE the verifier checks
 ./gradlew test            # all tests
 ./gradlew test --tests '*PaletteTest'   # one test class while you iterate
 ./gradlew buildPlugin     # build/distributions/lottie-<version>.zip

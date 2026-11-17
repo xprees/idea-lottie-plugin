@@ -28,3 +28,8 @@
 - The layer at the caret is outlined in the preview, and clicking the preview moves the caret to the layer under the mouse
 - *Extract Lottie JSON* from a `.lottie` file and *Pack as dotLottie* from a Lottie JSON file
 - *Settings › Languages & Frameworks › Lottie*
+
+### Fixed
+
+- Lottie and dotLottie files open again in 2026.3 IDEs, where the embedded browser moved into a separate bundled plugin (*Cannot
+  create editor by provider*, `NoClassDefFoundError: com/intellij/ui/jcef/JBCefApp`)
