@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/xprees/idea-lottie-plugin/security/advisories/new
+    about: Report security problems privately, not in a public issue.
+  - name: Rendering differences in the player
+    url: https://github.com/LottieFiles/dotlottie-web/issues
+    about: If an animation renders differently from other dotLottie players too, report it to the player.

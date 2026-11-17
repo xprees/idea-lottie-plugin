@@ -1,0 +1,12 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>cz.xprees.lottie</id>
+    <name>Lottie</name>
+    <vendor url="https://github.com/xprees">xprees</vendor>
+    <!-- <description> and <change-notes> are filled in from README.md / CHANGELOG.md by the Gradle build -->
+
+    <depends>com.intellij.modules.platform</depends>
+    <!-- Lottie .json files stay JSON files; the Lottie features build on the JSON plugin -->
+    <depends>com.intellij.modules.json</depends>
+    <!-- Rider's Solution Explorer has its own popup group instead of ProjectViewPopupMenu -->
+</idea-plugin>
