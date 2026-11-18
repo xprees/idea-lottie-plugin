@@ -26,10 +26,10 @@ class LottiePreviewFileEditor(project: Project, private val file: VirtualFile, p
 
     /**
      * What undo in this editor applies to: for Lottie JSON the document (the same stack as the text editor next to it, so marker
-     * edits from the timeline and changes made in the JSON undo in one sequence), for `.lottie` archives the file itself.
+     * edits from the timeline and changes made in the JSON undo in one sequence), for `.lottie` archives the archive's change history.
      */
     override fun getDocumentReferences(): Collection<DocumentReference> =
-        listOf(document?.let { DocumentReferenceManager.getInstance().create(it) } ?: DocumentReferenceManager.getInstance().create(file))
+        listOf(document?.let { DocumentReferenceManager.getInstance().create(it) } ?: cz.xprees.lottie.dotlottie.DotLottieUndoHistory.getInstance().reference(file))
 
     override fun getName(): String = LottieBundle.message("editor.preview.name")
 

@@ -73,4 +73,7 @@
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
         </action>
     </actions>
+    <applicationListeners>
+        <listener class="cz.xprees.lottie.LottieUnloadListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+    </applicationListeners>
 </idea-plugin>

@@ -20,7 +20,7 @@ class LottieJsonSchemaProviderFactory : JsonSchemaProviderFactory {
 
     /** dotLottie state machine files opened from a `.lottie` archive (a schema written after the dotLottie 2.0 spec). */
     private object StateMachineSchemaProvider : JsonSchemaFileProvider {
-        override fun isAvailable(file: VirtualFile) = file is StateMachineVirtualFile
+        override fun isAvailable(file: VirtualFile) = StateMachineVirtualFile.isStateMachine(file)
 
         override fun getName() = LottieBundle.message("schema.state.machine.name")
 

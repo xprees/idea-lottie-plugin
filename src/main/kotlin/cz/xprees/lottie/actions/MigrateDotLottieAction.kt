@@ -85,6 +85,10 @@ class DotLottieTabTitleProvider : com.intellij.openapi.fileEditor.impl.EditorTab
         val version = DotLottieVersions.version(file) ?: return null
         return LottieBundle.message("tab.title.version", file.presentableName, version)
     }
+
+    /** A state machine opened from a `.lottie` archive shows where it lives: the archive's path plus the entry. */
+    override fun getEditorTabTooltipText(project: Project, file: VirtualFile): String? =
+        cz.xprees.lottie.statemachine.StateMachineVirtualFile.path(file)
 }
 
 /** A banner over dotLottie 1.0 files offering the conversion to 2.0. */

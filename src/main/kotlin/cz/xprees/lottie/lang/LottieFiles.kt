@@ -20,9 +20,11 @@ object LottieFiles {
     /** Files larger than this are never sniffed (still recognized by the `.lottie.json` name). */
     private const val MAX_SNIFF_FILE_SIZE = 256L * 1024 * 1024
 
-    private class Sniffed(val stamp: Long, val length: Long, val documentStamp: Long, val lottie: Boolean)
-
-    private val SNIFFED = Key.create<Sniffed>("cz.xprees.lottie.sniffed")
+    /**
+     * The last sniff of a file: file stamp, length, document stamp and the result (1 for Lottie). A plain `long[]`, because the file
+     * keeps it after this plugin unloads, and an object of a plugin class there would keep the plugin from unloading.
+     */
+    private val SNIFFED = Key.create<LongArray>("cz.xprees.lottie.sniffed")
 
     fun isDotLottie(file: VirtualFile): Boolean =
         !file.isDirectory && (file.fileType == DotLottieFileType || file.extension.equals(DotLottieFileType.EXTENSION, ignoreCase = true))
@@ -44,8 +46,8 @@ object LottieFiles {
         val document = FileDocumentManager.getInstance().getCachedDocument(file)
         val documentStamp = document?.modificationStamp ?: -1L
         val cached = file.getUserData(SNIFFED)
-        if (cached != null && cached.stamp == file.modificationStamp && cached.length == file.length && cached.documentStamp == documentStamp) {
-            return cached.lottie
+        if (cached != null && cached[0] == file.modificationStamp && cached[1] == file.length && cached[2] == documentStamp) {
+            return cached[3] == 1L
         }
         val lottie = try {
             if (document != null) {
@@ -60,7 +62,7 @@ object LottieFiles {
         } catch (_: Exception) {
             false
         }
-        file.putUserData(SNIFFED, Sniffed(file.modificationStamp, file.length, documentStamp, lottie))
+        file.putUserData(SNIFFED, longArrayOf(file.modificationStamp, file.length, documentStamp, if (lottie) 1L else 0L))
         return lottie
     }
 
