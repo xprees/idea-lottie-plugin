@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- The *Code* tab writes whole components for the web players, typed in TypeScript (JavaScript when the project has no
+  `tsconfig.json`, or picked next to the platform): the player instance ready to use (Vue: `useTemplateRef<DotLottieVueInstance>`
+  and a reactive `dotLottie` ref), a typed `playMarker` and the marker playback is in, kept in reactive state with a `switch` over
+  the marker names. Android, Compose and Flutter get code that follows the markers as well
+- *Copy prompt for an AI agent* in the *Code* tab: the file, player, markers, state machine and generated component as a prompt for
+  a coding agent to integrate the animation
+- *→ dotLottie 2* after the version of a dotLottie 1.0 file in the preview toolbar converts it; *Convert to dotLottie 2.0* converts
+  several files selected in the Project view at once
+- The dotLottie 1.0 banner can be closed, or turned off (also in the settings)
+- Playback buttons show their key in the tooltip (Space, ←/→, Home/End, L)
+
+### Changed
+
+- Animations no longer play when they open (*Play animations when they open* is off by default); a state machine that loads first
+  starts with Play
+- A playing preview pauses when its editor tab is hidden or the IDE window loses the focus (setting)
+- Play button in the color of the other playback controls
+- Code snippets are highlighted in their own language (a Vue component as Vue, the calls in it as TypeScript, ...)
+
+### Fixed
+
+- The dotLottie 1.0 banner showed only over the first `.lottie` file opened
+
+## [2026.3.7] - 2026-11-18
+
 ### Fixed
 
 - No use of deprecated platform API (`ReadAction.compute`), which the JetBrains Marketplace verifier reported
@@ -90,7 +117,8 @@
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
 
-[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.4...HEAD
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.7...HEAD
+[2026.3.7]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.4...2026.3.7
 [2026.3.4]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.3...2026.3.4
 [2026.3.3]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...2026.3.3
 [2026.3.2]: https://github.com/xprees/idea-lottie-plugin/commits/2026.3.2

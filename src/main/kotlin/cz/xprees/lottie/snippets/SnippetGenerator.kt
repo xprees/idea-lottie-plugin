@@ -30,11 +30,14 @@ data class SnippetContext(
 }
 
 enum class SnippetKind {
-    /** Adding the player and loading the file. */
+    /** Adding the player and loading the file; for the web players a whole component with the player instance and marker code. */
     SETUP,
 
     /** Playing one marker's segment ([Snippet.subject] is the marker's label). */
     PLAY_MARKER,
+
+    /** Knowing which marker the playhead is in, for players whose setup doesn't include it. */
+    MARKER_EVENTS,
 
     /** Loading and starting the state machine ([Snippet.subject] is its id). */
     STATE_MACHINE,
@@ -46,10 +49,14 @@ enum class SnippetKind {
     CUSTOM_EVENTS,
 }
 
-data class Snippet(val kind: SnippetKind, val subject: String?, val code: String)
+/** A piece of code, highlighted as a file with [extension] (`vue`, `tsx`, `kt`, ...). */
+data class Snippet(val kind: SnippetKind, val subject: String?, val code: String, val extension: String)
 
-/** Why some snippets are missing: the runtime plays only Lottie JSON, or has no state machines. */
-enum class SnippetNote { JSON_ONLY, NO_STATE_MACHINES }
+/**
+ * Why some snippets are missing: the runtime plays only Lottie JSON, has no state machines, or reports no playback position that
+ * would tell which marker plays.
+ */
+enum class SnippetNote { JSON_ONLY, NO_STATE_MACHINES, NO_MARKER_EVENTS }
 
 class Snippets(val snippets: List<Snippet>, val notes: List<SnippetNote>) {
     fun first(kind: SnippetKind, subject: String? = null): Snippet? = snippets.firstOrNull { it.kind == kind && (subject == null || it.subject == subject) }
@@ -57,49 +64,54 @@ class Snippets(val snippets: List<Snippet>, val notes: List<SnippetNote>) {
 
 /**
  * Code that uses an animation's markers and state machine from an app, for each [CodePlatform]. The calls follow the runtimes'
- * public APIs (dotlottie-web/react 0.8x/0.2x, dotlottie-android 0.5+, dotlottie-ios, lottie-web 5, lottie-android/-compose 6,
- * lottie-ios 4, lottie-react-native 7, lottie for Flutter 3).
+ * public APIs (dotlottie-web 0.8x and its React, Vue, Svelte, Solid and web component wrappers, dotlottie-react-native 0.13,
+ * dotlottie-android 0.5+, dotlottie-ios, lottie-web 5, lottie-android/-compose 6, lottie-ios 4, lottie-react-native 7, lottie for
+ * Flutter 3). Web code is TypeScript unless [generate] is asked for JavaScript ([CodePlatform.typeScript]).
  */
 object SnippetGenerator {
 
-    fun generate(platform: CodePlatform, context: SnippetContext): Snippets {
+    fun generate(platform: CodePlatform, context: SnippetContext, typeScript: Boolean = true): Snippets {
         val notes = ArrayList<SnippetNote>()
         if (context.dotLottie && !platform.dotLottieFiles) notes += SnippetNote.JSON_ONLY
         val machine = context.stateMachineId?.takeIf { context.dotLottie }
         if (machine != null && !platform.stateMachines) notes += SnippetNote.NO_STATE_MACHINES
-        val g = generator(platform, context, machine?.takeIf { platform.stateMachines })
+        val g = generator(platform, context, machine?.takeIf { platform.stateMachines }, typeScript && platform.typeScript)
         val list = ArrayList<Snippet>()
-        list += Snippet(SnippetKind.SETUP, null, g.setup())
-        for (marker in context.markers) list += Snippet(SnippetKind.PLAY_MARKER, marker.label, g.playMarker(marker))
+        list += Snippet(SnippetKind.SETUP, null, g.setup(), g.setupExtension)
+        for (marker in context.markers) list += Snippet(SnippetKind.PLAY_MARKER, marker.label, g.playMarker(marker), g.codeExtension)
+        if (context.markers.isNotEmpty() && !g.markerEventsInSetup) {
+            val events = g.markerEvents()
+            if (events != null) list += Snippet(SnippetKind.MARKER_EVENTS, null, events, g.codeExtension) else notes += SnippetNote.NO_MARKER_EVENTS
+        }
         if (machine != null && platform.stateMachines) {
-            list += Snippet(SnippetKind.STATE_MACHINE, machine, g.stateMachine(machine))
-            for (input in context.inputs) list += Snippet(SnippetKind.INPUT, input.name, g.input(input, context.value(input)))
-            list += Snippet(SnippetKind.CUSTOM_EVENTS, null, g.customEvents())
+            list += Snippet(SnippetKind.STATE_MACHINE, machine, g.stateMachine(machine), g.codeExtension)
+            for (input in context.inputs) list += Snippet(SnippetKind.INPUT, input.name, g.input(input, context.value(input)), g.codeExtension)
+            list += Snippet(SnippetKind.CUSTOM_EVENTS, null, g.customEvents(), g.codeExtension)
         }
         return Snippets(list, notes)
     }
 
     /** The code that sets [input] to [value] (fires it for events) on [platform], for the state machine panel's copy buttons. */
     fun input(platform: CodePlatform, input: StateMachineInput, value: Any?): String? =
-        if (platform.stateMachines) generator(platform, SnippetContext("animation.lottie", true), "").input(input, value) else null
+        if (platform.stateMachines) generator(platform, SnippetContext("animation.lottie", true), "", true).input(input, value) else null
 
     fun playMarker(platform: CodePlatform, marker: SnippetMarker): String =
-        generator(platform, SnippetContext("animation.json", false, listOf(marker)), null).playMarker(marker)
+        generator(platform, SnippetContext("animation.json", false, listOf(marker)), null, true).playMarker(marker)
 
     fun customEvents(platform: CodePlatform, events: List<String>): String? =
-        if (platform.stateMachines) generator(platform, SnippetContext("animation.lottie", true, customEvents = events), "").customEvents() else null
+        if (platform.stateMachines) generator(platform, SnippetContext("animation.lottie", true, customEvents = events), "", true).customEvents() else null
 
-    private fun generator(platform: CodePlatform, c: SnippetContext, machine: String?): Generator = when (platform) {
-        CodePlatform.DOTLOTTIE_WEB -> DotLottieWeb(c, machine)
-        CodePlatform.DOTLOTTIE_REACT -> DotLottieReact(c, machine)
-        CodePlatform.DOTLOTTIE_VUE -> DotLottieVue(c, machine)
-        CodePlatform.DOTLOTTIE_SVELTE -> DotLottieSvelte(c, machine)
-        CodePlatform.DOTLOTTIE_SOLID -> DotLottieSolid(c, machine)
+    private fun generator(platform: CodePlatform, c: SnippetContext, machine: String?, ts: Boolean): Generator = when (platform) {
+        CodePlatform.DOTLOTTIE_WEB -> DotLottieWeb(c, machine, ts)
+        CodePlatform.DOTLOTTIE_REACT -> DotLottieReact(c, machine, ts)
+        CodePlatform.DOTLOTTIE_VUE -> DotLottieVue(c, machine, ts)
+        CodePlatform.DOTLOTTIE_SVELTE -> DotLottieSvelte(c, machine, ts)
+        CodePlatform.DOTLOTTIE_SOLID -> DotLottieSolid(c, machine, ts)
         CodePlatform.DOTLOTTIE_WEB_COMPONENT -> DotLottieWebComponent(c, machine)
-        CodePlatform.DOTLOTTIE_REACT_NATIVE -> DotLottieReactNative(c, machine)
+        CodePlatform.DOTLOTTIE_REACT_NATIVE -> DotLottieReactNative(c, machine, ts)
         CodePlatform.DOTLOTTIE_FLUTTER -> DotLottieFlutter(c, machine)
-        CodePlatform.LOTTIE_WEB -> LottieWeb(c)
-        CodePlatform.REACT_NATIVE -> ReactNative(c)
+        CodePlatform.LOTTIE_WEB -> LottieWeb(c, ts)
+        CodePlatform.REACT_NATIVE -> ReactNative(c, ts)
         CodePlatform.DOTLOTTIE_ANDROID_COMPOSE -> DotLottieCompose(c, machine)
         CodePlatform.DOTLOTTIE_ANDROID_VIEW -> DotLottieView(c, machine)
         CodePlatform.LOTTIE_COMPOSE -> LottieCompose(c)
@@ -117,6 +129,15 @@ object SnippetGenerator {
         open fun stateMachine(id: String): String = ""
         open fun input(input: StateMachineInput, value: Any?): String = ""
         open fun customEvents(): String = ""
+
+        /** Code that follows which marker the playhead is in, or null when the runtime doesn't tell the app where playback is. */
+        open fun markerEvents(): String? = null
+
+        /** True when [setup] already follows the markers (the web components), so no separate snippet is needed. */
+        open val markerEventsInSetup: Boolean = false
+
+        abstract val setupExtension: String
+        open val codeExtension: String get() = setupExtension
 
         /** A marker's frames counted from the animation's first frame, the way frame callbacks report them; at least one frame long. */
         fun absolute(m: SnippetMarker) = number(m.start) to number(m.start + maxOf(m.duration, 1.0))
@@ -172,22 +193,87 @@ object SnippetGenerator {
 
     private fun indent(text: String, by: String) = text.lines().joinToString("\n") { if (it.isEmpty()) it else by + it }
 
+    // ---- JavaScript and TypeScript -----------------------------------------------------------------------------------------
+
+    /** What the web generators share: TypeScript or not, and the marker helpers. */
+    private abstract class Web(c: SnippetContext, val ts: Boolean) : Generator(c) {
+        /** `: type` in TypeScript, nothing in JavaScript. */
+        fun t(type: String) = if (ts) ": $type" else ""
+
+        /** `<type>` in TypeScript (generic arguments), nothing in JavaScript. */
+        fun g(type: String) = if (ts) "<$type>" else ""
+
+        /** `import { a, type B }`: the type-only names are left out in JavaScript. */
+        fun imports(from: String, names: List<String>, types: List<String> = emptyList()): String {
+            val all = names + if (ts) types.map { "type $it" } else emptyList()
+            return "import { ${all.joinToString(", ")} } from ${js(from)};\n"
+        }
+
+        val hasMarkers get() = c.markers.isNotEmpty()
+
+        /** `type MarkerName = 'intro' | 'outro';` with a blank line after it (TypeScript only). */
+        fun markerType(): String =
+            if (ts && hasMarkers) "type MarkerName = ${c.markers.map { it.name }.distinct().joinToString(" | ") { js(it) }};\n\n" else ""
+
+        val markerParam get() = "name" + t(if (hasMarkers) "MarkerName" else "string")
+
+        /** `switch (variable) { case 'intro': … }` over the markers, each line starting with [indent]. */
+        fun markerSwitch(indent: String, variable: String): String = buildString {
+            append("${indent}switch ($variable) {\n")
+            for (m in c.markers.distinctBy { it.name }) append("$indent  case ${js(m.name)}: /* playback entered ${comment(m.label)} */ break;\n")
+            append("$indent}\n")
+        }
+
+        /** The marker [player] (a dotLottie instance) says the frame [frame] is in. */
+        fun findMarker(player: String, frame: String = "currentFrame") = "$player.markers().find((m) => $frame >= m.start && $frame < m.end)?.name"
+
+        /** The file's markers as a constant, for players that report frames but not markers. */
+        fun markerTable(name: String): String = buildString {
+            append("// the file's markers, in frames\n")
+            append("const $name = [\n")
+            for (m in c.markers) {
+                val (start, end) = absolute(m)
+                append("  { name: ${js(m.name)}, start: $start, end: $end },\n")
+            }
+            append("];\n")
+        }
+    }
+
     // ---- dotLottie web -----------------------------------------------------------------------------------------------------
 
-    private open class DotLottieWeb(c: SnippetContext, val machine: String?) : Generator(c) {
-        /** How the calls reach the player instance: `dotLottie.`, `dotLottie?.` (set once mounted) or `dotLottie()?.` (a signal). */
+    private open class DotLottieWeb(c: SnippetContext, val machine: String?, ts: Boolean) : Web(c, ts) {
+        /** How the calls reach the player instance: `dotLottie.`, `dotLottie?.` (set once mounted), `dotLottie()?.` (a signal), ... */
         open val access = "dotLottie."
+        override val setupExtension get() = if (ts) "ts" else "js"
+        override val codeExtension get() = if (ts) "ts" else "js"
+        override val markerEventsInSetup = true
 
         override fun setup(): String = buildString {
             append("import { DotLottie } from '@lottiefiles/dotlottie-web';\n\n")
             append("const dotLottie = new DotLottie({\n")
-            append("  canvas: document.querySelector('#lottie'),\n")
+            append(if (ts) "  canvas: document.querySelector<HTMLCanvasElement>('#lottie')!,\n" else "  canvas: document.querySelector('#lottie'),\n")
             append("  src: ${js(webPath())},\n")
             append("  autoplay: true,\n")
             append("  loop: true,\n")
             if (machine != null) append("  stateMachineId: ${js(machine)},\n")
-            append("});")
-        }
+            append("});\n")
+            if (hasMarkers) {
+                append("\n")
+                append(markerType())
+                append("function playMarker($markerParam) {\n")
+                append("  dotLottie.setMarker(name);\n")
+                append("  dotLottie.play();\n")
+                append("}\n\n")
+                append("// the marker the playhead is in, updated as playback moves\n")
+                append("let currentMarker${t("string | undefined")};\n")
+                append("dotLottie.addEventListener('frame', ({ currentFrame }) => {\n")
+                append("  const marker = ${findMarker("dotLottie")};\n")
+                append("  if (marker === currentMarker) return;\n")
+                append("  currentMarker = marker;\n")
+                append(markerSwitch("  ", "marker"))
+                append("});\n")
+            }
+        }.trimEnd()
 
         override fun playMarker(marker: SnippetMarker) = "${access}setMarker(${js(marker.name)});\n${access}play();"
 
@@ -218,15 +304,35 @@ object SnippetGenerator {
         }
     }
 
-    private class DotLottieReact(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    private class DotLottieReact(c: SnippetContext, machine: String?, ts: Boolean) : DotLottieWeb(c, machine, ts) {
         override val access = "dotLottie?."
+        override val setupExtension get() = if (ts) "tsx" else "jsx"
 
         override fun setup(): String = buildString {
-            append(if (machine != null) "import { useEffect, useState } from 'react';\n" else "import { useState } from 'react';\n")
-            append("import { DotLottieReact } from '@lottiefiles/dotlottie-react';\n\n")
+            append(imports("react", if (hasMarkers) listOf("useEffect", "useState") else listOf("useState")))
+            append(imports("@lottiefiles/dotlottie-react", listOf("DotLottieReact"), listOf("DotLottie") + if (hasMarkers) listOf("FrameEvent") else emptyList()))
+            append("\n")
+            append(markerType())
             append("export function ${component(c.baseName)}() {\n")
-            append("  // the player instance, for the calls below (null until the canvas is mounted)\n")
-            append("  const [dotLottie, setDotLottie] = useState(null);\n")
+            append("  // the dotLottie player instance, for the calls below (null until the canvas is mounted)\n")
+            append("  const [dotLottie, setDotLottie] = useState${g("DotLottie | null")}(null);\n")
+            if (hasMarkers) {
+                append("  // the marker the playhead is in, updated as playback moves\n")
+                append("  const [currentMarker, setCurrentMarker] = useState${g("string")}();\n\n")
+                append("  useEffect(() => {\n")
+                append("    if (!dotLottie) return;\n")
+                append("    const onFrame = ({ currentFrame }${t("FrameEvent")}) => setCurrentMarker(${findMarker("dotLottie")});\n")
+                append("    dotLottie.addEventListener('frame', onFrame);\n")
+                append("    return () => dotLottie.removeEventListener('frame', onFrame);\n")
+                append("  }, [dotLottie]);\n\n")
+                append("  useEffect(() => {\n")
+                append(markerSwitch("    ", "currentMarker"))
+                append("  }, [currentMarker]);\n\n")
+                append("  const playMarker = ($markerParam) => {\n")
+                append("    dotLottie?.setMarker(name);\n")
+                append("    dotLottie?.play();\n")
+                append("  };\n\n")
+            }
             append("  return (\n")
             append("    <DotLottieReact\n")
             append("      src=${jsxString(webPath())}\n")
@@ -240,19 +346,49 @@ object SnippetGenerator {
         }
 
         override fun customEvents(): String =
-            "useEffect(() => {\n  if (!dotLottie) return;\n  const onEvent = ({ eventName }) => {\n" + eventSwitch("    ") +
+            "useEffect(() => {\n  if (!dotLottie) return;\n  const onEvent = ({ eventName }${t("StateMachineCustomEvent")}) => {\n" + eventSwitch("    ") +
                 "  };\n  dotLottie.addEventListener('stateMachineCustomEvent', onEvent);\n" +
                 "  return () => dotLottie.removeEventListener('stateMachineCustomEvent', onEvent);\n}, [dotLottie]);"
     }
 
-    private class DotLottieVue(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    private class DotLottieVue(c: SnippetContext, machine: String?, ts: Boolean) : DotLottieWeb(c, machine, ts) {
+        override val access = "dotLottie.value?."
+        override val setupExtension = "vue"
+
         override fun setup(): String = buildString {
-            append("<script setup>\n")
-            append("import { ref } from 'vue';\n")
-            append("import { DotLottieVue } from '@lottiefiles/dotlottie-vue';\n\n")
-            append("const player = ref(null);\n")
-            append("// the player instance, for the calls below (once mounted):\n")
-            append("// const dotLottie = player.value.getDotLottieInstance();\n")
+            append(if (ts) "<script setup lang=\"ts\">\n" else "<script setup>\n")
+            append(imports("vue", if (hasMarkers) listOf("onMounted", "ref", "shallowRef", "useTemplateRef", "watch") else listOf("onMounted", "shallowRef", "useTemplateRef")))
+            append(imports("@lottiefiles/dotlottie-vue", listOf("DotLottieVue"), listOf("DotLottie", "DotLottieVueInstance")))
+            append("\n")
+            append(markerType())
+            append("const playerRef = useTemplateRef${g("DotLottieVueInstance")}('player');\n")
+            append("// the dotLottie player instance, for the calls below (set once mounted)\n")
+            append("const dotLottie = shallowRef${g("DotLottie | null")}(null);\n")
+            if (hasMarkers) {
+                append("// the marker the playhead is in, updated as playback moves\n")
+                append("const currentMarker = ref${g("string")}();\n")
+            }
+            append("\n")
+            append("onMounted(() => {\n")
+            append("  const instance = playerRef.value?.getDotLottieInstance();\n")
+            append("  if (!instance) return;\n")
+            append("  dotLottie.value = instance;\n")
+            if (hasMarkers) {
+                append("  instance.addEventListener('frame', ({ currentFrame }) => {\n")
+                append("    currentMarker.value = ${findMarker("instance")};\n")
+                append("  });\n")
+            }
+            append("});\n")
+            if (hasMarkers) {
+                append("\n")
+                append("watch(currentMarker, (marker) => {\n")
+                append(markerSwitch("  ", "marker"))
+                append("});\n\n")
+                append("function playMarker($markerParam) {\n")
+                append("  dotLottie.value?.setMarker(name);\n")
+                append("  dotLottie.value?.play();\n")
+                append("}\n")
+            }
             append("</script>\n\n")
             append("<template>\n")
             append("  <DotLottieVue ref=\"player\" src=${attribute(webPath())} autoplay loop")
@@ -260,36 +396,90 @@ object SnippetGenerator {
             append(" />\n")
             append("</template>")
         }
+
+        override fun customEvents(): String = buildString {
+            append("// in onMounted, once dotLottie.value is set\n")
+            append("${access}addEventListener('stateMachineCustomEvent', ({ eventName }) => {\n")
+            append(eventSwitch("  "))
+            append("});")
+        }
     }
 
-    private class DotLottieSvelte(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    private class DotLottieSvelte(c: SnippetContext, machine: String?, ts: Boolean) : DotLottieWeb(c, machine, ts) {
         override val access = "dotLottie?."
+        override val setupExtension = "svelte"
 
         override fun setup(): String = buildString {
-            append("<script>\n")
-            append("  import { DotLottieSvelte } from '@lottiefiles/dotlottie-svelte';\n\n")
-            append("  // the player instance, for the calls below (null until the canvas is mounted)\n")
-            append("  let dotLottie = null;\n")
+            append(if (ts) "<script lang=\"ts\">\n" else "<script>\n")
+            append("  " + imports("@lottiefiles/dotlottie-svelte", listOf("DotLottieSvelte"), listOf("DotLottie") + if (hasMarkers) listOf("FrameEvent") else emptyList()))
+            append("\n")
+            if (ts && hasMarkers) append("  " + markerType())
+            append("  // the dotLottie player instance, for the calls below (null until the canvas is mounted)\n")
+            append("  let dotLottie = \$state.raw${g("DotLottie | null")}(null);\n")
+            if (hasMarkers) {
+                append("  // the marker the playhead is in, updated as playback moves\n")
+                append("  let currentMarker = \$state${g("string")}();\n\n")
+                append("  \$effect(() => {\n")
+                append("    const instance = dotLottie;\n")
+                append("    if (!instance) return;\n")
+                append("    const onFrame = ({ currentFrame }${t("FrameEvent")}) => (currentMarker = ${findMarker("instance")});\n")
+                append("    instance.addEventListener('frame', onFrame);\n")
+                append("    return () => instance.removeEventListener('frame', onFrame);\n")
+                append("  });\n\n")
+                append("  \$effect(() => {\n")
+                append(markerSwitch("    ", "currentMarker"))
+                append("  });\n\n")
+                append("  function playMarker($markerParam) {\n")
+                append("    dotLottie?.setMarker(name);\n")
+                append("    dotLottie?.play();\n")
+                append("  }\n")
+            }
             append("</script>\n\n")
             append("<DotLottieSvelte\n")
             append("  src=${attribute(webPath())}\n")
             append("  autoplay\n")
             append("  loop\n")
             if (machine != null) append("  stateMachineId=${attribute(machine)}\n")
-            append("  dotLottieRefCallback={(ref) => (dotLottie = ref)}\n")
+            append("  dotLottieRefCallback={(instance) => (dotLottie = instance)}\n")
             append("/>")
         }
+
+        override fun customEvents(): String =
+            "\$effect(() => {\n  const instance = dotLottie;\n  if (!instance) return;\n  const onEvent = ({ eventName }${t("StateMachineCustomEvent")}) => {\n" + eventSwitch("    ") +
+                "  };\n  instance.addEventListener('stateMachineCustomEvent', onEvent);\n" +
+                "  return () => instance.removeEventListener('stateMachineCustomEvent', onEvent);\n});"
     }
 
-    private class DotLottieSolid(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    private class DotLottieSolid(c: SnippetContext, machine: String?, ts: Boolean) : DotLottieWeb(c, machine, ts) {
         override val access = "dotLottie()?."
+        override val setupExtension get() = if (ts) "tsx" else "jsx"
 
         override fun setup(): String = buildString {
-            append("import { createSignal } from 'solid-js';\n")
-            append("import { DotLottieSolid } from '@lottiefiles/dotlottie-solid';\n\n")
+            append(imports("solid-js", if (hasMarkers) listOf("createEffect", "createSignal", "onCleanup") else listOf("createSignal")))
+            append(imports("@lottiefiles/dotlottie-solid", listOf("DotLottieSolid"), listOf("DotLottie") + if (hasMarkers) listOf("FrameEvent") else emptyList()))
+            append("\n")
+            append(markerType())
             append("export function ${component(c.baseName)}() {\n")
-            append("  // the player instance, for the calls below (null until the canvas is mounted)\n")
-            append("  const [dotLottie, setDotLottie] = createSignal(null);\n")
+            append("  // the dotLottie player instance, for the calls below (null until the canvas is mounted)\n")
+            append("  const [dotLottie, setDotLottie] = createSignal${g("DotLottie | null")}(null);\n")
+            if (hasMarkers) {
+                append("  // the marker the playhead is in, updated as playback moves\n")
+                append("  const [currentMarker, setCurrentMarker] = createSignal${g("string")}();\n\n")
+                append("  createEffect(() => {\n")
+                append("    const instance = dotLottie();\n")
+                append("    if (!instance) return;\n")
+                append("    const onFrame = ({ currentFrame }${t("FrameEvent")}) => setCurrentMarker(${findMarker("instance")});\n")
+                append("    instance.addEventListener('frame', onFrame);\n")
+                append("    onCleanup(() => instance.removeEventListener('frame', onFrame));\n")
+                append("  });\n\n")
+                append("  createEffect(() => {\n")
+                append(markerSwitch("    ", "currentMarker()"))
+                append("  });\n\n")
+                append("  const playMarker = ($markerParam) => {\n")
+                append("    dotLottie()?.setMarker(name);\n")
+                append("    dotLottie()?.play();\n")
+                append("  };\n\n")
+            }
             append("  return (\n")
             append("    <DotLottieSolid\n")
             append("      src=${jsxString(webPath())}\n")
@@ -303,44 +493,88 @@ object SnippetGenerator {
         }
     }
 
-    private class DotLottieWebComponent(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    /** The `<dotlottie-wc>` element in a page: plain JavaScript in a module script. */
+    private class DotLottieWebComponent(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine, false) {
+        override val setupExtension = "html"
+        override val codeExtension = "js"
+
         override fun setup(): String = buildString {
             append("<dotlottie-wc id=\"lottie\" src=${attribute(webPath())} autoplay loop")
             if (machine != null) append(" statemachineid=${attribute(machine)}")
             append("></dotlottie-wc>\n\n")
             append("<script type=\"module\">\n")
             append("  import '@lottiefiles/dotlottie-wc';\n\n")
-            append("  // the player instance, for the calls below\n")
+            append("  // the dotLottie player instance, for the calls below (the element creates it when it is defined)\n")
             append("  const dotLottie = document.querySelector('#lottie').dotLottie;\n")
+            if (hasMarkers) {
+                append("\n")
+                append("  function playMarker(name) {\n")
+                append("    dotLottie.setMarker(name);\n")
+                append("    dotLottie.play();\n")
+                append("  }\n\n")
+                append("  // the marker the playhead is in, updated as playback moves\n")
+                append("  let currentMarker;\n")
+                append("  dotLottie.addEventListener('frame', ({ currentFrame }) => {\n")
+                append("    const marker = ${findMarker("dotLottie")};\n")
+                append("    if (marker === currentMarker) return;\n")
+                append("    currentMarker = marker;\n")
+                append(markerSwitch("    ", "marker"))
+                append("  });\n")
+            }
             append("</script>")
         }
     }
 
     // ---- lottie-web ----------------------------------------------------------------------------------------------------------
 
-    private class LottieWeb(c: SnippetContext) : Generator(c) {
+    private class LottieWeb(c: SnippetContext, ts: Boolean) : Web(c, ts) {
+        override val setupExtension get() = if (ts) "ts" else "js"
+        override val markerEventsInSetup = true
+
         override fun setup(): String = buildString {
             append("import lottie from 'lottie-web';\n\n")
             append("const animation = lottie.loadAnimation({\n")
-            append("  container: document.querySelector('#lottie'),\n")
+            append(if (ts) "  container: document.querySelector<HTMLElement>('#lottie')!,\n" else "  container: document.querySelector('#lottie'),\n")
             append("  renderer: 'svg',\n")
             append("  loop: true,\n")
             append("  autoplay: true,\n")
             append("  path: ${js(if (c.dotLottie) webPath().substringBeforeLast('.') + ".json" else webPath())},\n")
-            append("});")
-        }
+            append("});\n")
+            if (hasMarkers) {
+                append("\n")
+                append(markerType())
+                append("function playMarker($markerParam) {\n")
+                append("  animation.goToAndPlay(name, true);\n")
+                append("}\n\n")
+                append(markerTable("markers"))
+                append("\n")
+                append("// the marker the playhead is in, updated as playback moves\n")
+                append("let currentMarker${t("string | undefined")};\n")
+                append("animation.addEventListener('enterFrame', () => {\n")
+                append("  const frame = animation.firstFrame + animation.currentFrame;\n")
+                append("  const marker = markers.find((m) => frame >= m.start && frame < m.end)?.name;\n")
+                append("  if (marker === currentMarker) return;\n")
+                append("  currentMarker = marker;\n")
+                append(markerSwitch("  ", "marker"))
+                append("});\n")
+            }
+        }.trimEnd()
 
         override fun playMarker(marker: SnippetMarker) = "animation.goToAndPlay(${js(marker.name)}, true);"
     }
 
     // ---- React Native --------------------------------------------------------------------------------------------------------
 
-    private class ReactNative(c: SnippetContext) : Generator(c) {
+    private class ReactNative(c: SnippetContext, ts: Boolean) : Web(c, ts) {
+        override val setupExtension get() = if (ts) "tsx" else "jsx"
+        override val codeExtension get() = if (ts) "ts" else "js"
+
         override fun setup(): String = buildString {
             append("import { useRef } from 'react';\n")
             append("import LottieView from 'lottie-react-native';\n\n")
             append("export function ${component(c.baseName)}() {\n")
-            append("  const animation = useRef(null);\n")
+            append("  // the player, for the calls below\n")
+            append("  const animation = useRef${g("LottieView")}(null);\n")
             append("  return (\n")
             append("    <LottieView\n")
             append("      ref={animation}\n")
@@ -364,6 +598,7 @@ object SnippetGenerator {
 
     private open class DotLottieView(c: SnippetContext, val machine: String?) : Generator(c) {
         open val player = "dotLottieAnimationView"
+        override val setupExtension = "kt"
 
         /** The source of the file in an Android app: a raw resource when it is in `res/raw`, else an asset. */
         fun androidSource(): String {
@@ -392,6 +627,27 @@ object SnippetGenerator {
 
         override fun playMarker(marker: SnippetMarker) = "$player.setMarker(${kt(marker.name)})\n$player.play()"
 
+        override fun markerEvents(): String? = buildString {
+            append("import com.lottiefiles.dotlottie.core.util.DotLottieEventListener\n\n")
+            append("// the file's markers: name, first frame, end frame\n")
+            append("val markers = listOf(\n")
+            for (m in c.markers) {
+                val (start, end) = absolute(m)
+                append("    Triple(${kt(m.name)}, ${start}f, ${end}f),\n")
+            }
+            append(")\n\n")
+            append("// the marker the playhead is in, updated as playback moves\n")
+            append("var currentMarker: String? = null\n")
+            append("$player.addEventListener(object : DotLottieEventListener {\n")
+            append("    override fun onFrame(frame: Float) {\n")
+            append("        val marker = markers.firstOrNull { (_, start, end) -> frame >= start && frame < end }?.first\n")
+            append("        if (marker == currentMarker) return\n")
+            append("        currentMarker = marker\n")
+            append(ktWhen("        ", "marker"))
+            append("    }\n")
+            append("})")
+        }.takeIf { this !is DotLottieCompose }
+
         override fun stateMachine(id: String) = "$player.stateMachineLoad(${kt(id)})\n$player.stateMachineStart()"
 
         override fun input(input: StateMachineInput, value: Any?): String = when (input.type) {
@@ -417,6 +673,13 @@ object SnippetGenerator {
             }
             append("    }\n")
             append("})")
+        }
+
+        /** `when (variable) { "intro" -> { … } }` over the markers. */
+        fun ktWhen(indent: String, variable: String): String = buildString {
+            append("${indent}when ($variable) {\n")
+            for (m in c.markers.distinctBy { it.name }) append("$indent    ${kt(m.name)} -> { /* playback entered ${comment(m.label)} */ }\n")
+            append("$indent}\n")
         }
     }
 
@@ -449,6 +712,8 @@ object SnippetGenerator {
     // ---- Lottie Android (Airbnb) ------------------------------------------------------------------------------------------------
 
     private class LottieAndroid(c: SnippetContext) : Generator(c) {
+        override val setupExtension = "kt"
+
         override fun setup(): String = buildString {
             append("import com.airbnb.lottie.LottieAnimationView\n\n")
             append("val animationView = findViewById<LottieAnimationView>(R.id.animation_view)\n")
@@ -458,6 +723,19 @@ object SnippetGenerator {
         }
 
         override fun playMarker(marker: SnippetMarker) = "animationView.setMinAndMaxFrame(${kt(marker.name)})\nanimationView.playAnimation()"
+
+        override fun markerEvents(): String = buildString {
+            append("// the marker the playhead is in, updated as playback moves\n")
+            append("var currentMarker: String? = null\n")
+            append("animationView.addAnimatorUpdateListener {\n")
+            append("    val frame = animationView.frame\n")
+            append("    val marker = animationView.composition?.markers\n")
+            append("        ?.firstOrNull { frame >= it.startFrame && frame < it.startFrame + it.durationFrames }?.name\n")
+            append("    if (marker == currentMarker) return@addAnimatorUpdateListener\n")
+            append("    currentMarker = marker\n")
+            append(ktWhen(c, "    ", "marker"))
+            append("}")
+        }
 
         private fun androidLoad(view: String): String {
             val raw = Regex("(^|/)res/raw/([^/]+)$").find(c.path)
@@ -469,6 +747,8 @@ object SnippetGenerator {
     }
 
     private class LottieCompose(c: SnippetContext) : Generator(c) {
+        override val setupExtension = "kt"
+
         private fun spec(): String {
             val raw = Regex("(^|/)res/raw/([^/]+)$").find(c.path)
             if (raw != null) return "LottieCompositionSpec.RawRes(R.raw.${resourceName(raw.groupValues[2])})"
@@ -490,11 +770,29 @@ object SnippetGenerator {
         override fun playMarker(marker: SnippetMarker) =
             "val progress by animateLottieCompositionAsState(\n    composition,\n    clipSpec = LottieClipSpec.Marker(${kt(marker.name)}),\n)"
 
+        override fun markerEvents(): String = buildString {
+            append("// in the composable, next to `progress`: the marker the playhead is in\n")
+            append("val currentMarker = composition?.let { c ->\n")
+            append("    val frame = c.getFrameForProgress(progress)\n")
+            append("    c.markers.firstOrNull { frame >= it.startFrame && frame < it.startFrame + it.durationFrames }?.name\n")
+            append("}\n")
+            append("LaunchedEffect(currentMarker) {\n")
+            append(ktWhen(c, "    ", "currentMarker"))
+            append("}")
+        }
+    }
+
+    private fun ktWhen(c: SnippetContext, indent: String, variable: String): String = buildString {
+        append("${indent}when ($variable) {\n")
+        for (m in c.markers.distinctBy { it.name }) append("$indent    ${kt(m.name)} -> { /* playback entered ${comment(m.label)} */ }\n")
+        append("$indent}\n")
     }
 
     // ---- iOS ---------------------------------------------------------------------------------------------------------------------
 
     private class DotLottieIos(c: SnippetContext, val machine: String?) : Generator(c) {
+        override val setupExtension = "swift"
+
         override fun setup(): String = buildString {
             append("import SwiftUI\n")
             append("import DotLottie\n\n")
@@ -551,6 +849,8 @@ object SnippetGenerator {
     }
 
     private class LottieIos(c: SnippetContext) : Generator(c) {
+        override val setupExtension = "swift"
+
         override fun setup(): String = buildString {
             append("import Lottie\n\n")
             if (c.dotLottie) {
@@ -569,6 +869,8 @@ object SnippetGenerator {
     // ---- Flutter -----------------------------------------------------------------------------------------------------------------
 
     private class Flutter(c: SnippetContext) : Generator(c) {
+        override val setupExtension = "dart"
+
         override fun setup(): String = buildString {
             append("import 'package:flutter/material.dart';\n")
             append("import 'package:lottie/lottie.dart';\n\n")
@@ -603,19 +905,55 @@ object SnippetGenerator {
             "final marker = _composition?.getMarker(${js(marker.name, dollar = true)});\n" +
                 "if (marker != null) {\n  _controller.value = marker.start;\n  _controller.animateTo(marker.end);\n}"
 
+        override fun markerEvents(): String = buildString {
+            append("// in initState: the marker the playhead is in, updated as playback moves\n")
+            append("String? currentMarker;\n")
+            append("_controller.addListener(() {\n")
+            append("  String? marker;\n")
+            append("  for (final m in _composition?.markers ?? const <Marker>[]) {\n")
+            append("    if (_controller.value >= m.start && _controller.value < m.end) {\n")
+            append("      marker = m.name;\n")
+            append("      break;\n")
+            append("    }\n")
+            append("  }\n")
+            append("  if (marker == currentMarker) return;\n")
+            append("  currentMarker = marker;\n")
+            append("  switch (marker) {\n")
+            for (m in c.markers.distinctBy { it.name }) append("    case ${js(m.name, dollar = true)}: // playback entered ${comment(m.label)}\n      break;\n")
+            append("  }\n")
+            append("});")
+        }
     }
 
     // ---- dotLottie React Native and Flutter -----------------------------------------------------------------------------
 
-    private class DotLottieReactNative(c: SnippetContext, machine: String?) : DotLottieWeb(c, machine) {
+    private class DotLottieReactNative(c: SnippetContext, machine: String?, ts: Boolean) : DotLottieWeb(c, machine, ts) {
         override val access = "ref.current?."
+        override val setupExtension get() = if (ts) "tsx" else "jsx"
 
         override fun setup(): String = buildString {
-            append("import { useRef } from 'react';\n")
-            append("import { DotLottie } from '@lottiefiles/dotlottie-react-native';\n\n")
+            append(imports("react", if (hasMarkers) listOf("useEffect", "useRef", "useState") else listOf("useRef")))
+            append(imports("@lottiefiles/dotlottie-react-native", listOf("DotLottie"), listOf("Dotlottie")))
+            append("\n")
+            if (hasMarkers) {
+                append(markerType())
+                append(markerTable("MARKERS"))
+                append("\n")
+            }
             append("export function ${component(c.baseName)}() {\n")
-            append("  // drives the player from your code (the calls below)\n")
-            append("  const ref = useRef(null);\n")
+            append("  // the player, for the calls below\n")
+            append("  const ref = useRef${g("Dotlottie")}(null);\n")
+            if (hasMarkers) {
+                append("  // the marker the playhead is in, updated as playback moves\n")
+                append("  const [currentMarker, setCurrentMarker] = useState${g("string")}();\n\n")
+                append("  useEffect(() => {\n")
+                append(markerSwitch("    ", "currentMarker"))
+                append("  }, [currentMarker]);\n\n")
+                append("  const playMarker = ($markerParam) => {\n")
+                append("    ref.current?.setMarker(name);\n")
+                append("    ref.current?.play();\n")
+                append("  };\n\n")
+            }
             append("  return (\n")
             append("    <DotLottie\n")
             append("      ref={ref}\n")
@@ -623,6 +961,7 @@ object SnippetGenerator {
             append("      autoplay\n")
             append("      loop\n")
             if (machine != null) append("      stateMachineId=${jsxString(machine)}\n")
+            if (hasMarkers) append("      onFrame={(frame) => setCurrentMarker(MARKERS.find((m) => frame >= m.start && frame < m.end)?.name)}\n")
             append("      style={{ width: 200, height: 200 }}\n")
             append("    />\n")
             append("  );\n")
@@ -637,6 +976,8 @@ object SnippetGenerator {
     }
 
     private class DotLottieFlutter(c: SnippetContext, val machine: String?) : Generator(c) {
+        override val setupExtension = "dart"
+
         override fun setup(): String = buildString {
             append("import 'package:dotlottie_flutter/dotlottie_flutter.dart';\n\n")
             append("// drives the player from your code (the calls below)\n")

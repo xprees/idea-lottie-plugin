@@ -271,9 +271,33 @@ class LottiePreviewPanel(
     /** "Lottie 5.12.1", or "dotLottie 2 · Lottie 5.7.4" for `.lottie` files. */
     private val versionLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
+    }
+    /** "→ dotLottie 2" after the version of a dotLottie 1.0 file: converts it. */
+    private val upgradeLink = JBLabel().apply {
+        foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+        toolTipText = LottieBundle.message("version.upgrade.tooltip")
+        isVisible = false
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                if (isVisible) cz.xprees.lottie.actions.MigrateDotLottieAction.migrate(project, file)
+            }
+        })
+    }
+    private val lottieVersionLabel = JBLabel().apply {
+        foreground = UIUtil.getContextHelpForeground()
+    }
+    private val versionPanel = JPanel().apply {
+        layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.X_AXIS)
+        isOpaque = false
         border = JBUI.Borders.empty(0, 6, 0, 8)
+        add(versionLabel)
+        add(upgradeLink)
+        add(lottieVersionLabel)
     }
     private var shownSpecVersion: Int? = null
+    /** Whether the editor banners were asked for, once the preview first showed. */
+    private var notificationsRequested = false
     private val infoLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
         horizontalAlignment = SwingConstants.RIGHT
@@ -310,7 +334,7 @@ class LottiePreviewPanel(
         // the toolbar, with the file's versions in muted text at its end
         north.add(JPanel(BorderLayout()).apply {
             add(toolbar.component, BorderLayout.CENTER)
-            add(versionLabel, BorderLayout.EAST)
+            add(versionPanel, BorderLayout.EAST)
         })
         north.add(errorBanner)
         north.add(paletteStrip)
@@ -342,6 +366,25 @@ class LottiePreviewPanel(
         ApplicationManager.getApplication().messageBus.connect(this).subscribe(LottieSettings.TOPIC, LottieSettings.Listener {
             browser?.call("setPickEnabled", onPick != null && it.previewSync)
         })
+        // a hidden preview doesn't keep playing: another editor tab was selected, or the IDE window lost the focus
+        addHierarchyListener { e ->
+            if (e.changeFlags and java.awt.event.HierarchyEvent.SHOWING_CHANGED.toLong() == 0L) return@addHierarchyListener
+            if (!isShowing) {
+                pausePlayback()
+            } else if (!notificationsRequested) {
+                // the platform shows the banners of editors that aren't text editors (the dotLottie 1.0 one) only when asked
+                notificationsRequested = true
+                com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(file)
+            }
+        }
+        ApplicationManager.getApplication().messageBus.connect(this).subscribe(
+            com.intellij.openapi.application.ApplicationActivationListener.TOPIC,
+            object : com.intellij.openapi.application.ApplicationActivationListener {
+                override fun applicationDeactivated(ideFrame: com.intellij.openapi.wm.IdeFrame) {
+                    if (LottieSettings.getInstance().state.pauseWhenInactive) pausePlayback()
+                }
+            },
+        )
         scheduleUpdate(0)
         updateLabels()
     }
@@ -509,8 +552,19 @@ class LottiePreviewPanel(
     private fun updateVersions(prepared: Prepared) {
         val lottie = prepared.info?.version?.takeIf { it.isNotBlank() }?.let { LottieBundle.message("version.lottie", it) }
         val spec = prepared.archive?.specVersion
-        versionLabel.text = listOfNotNull(spec?.let { LottieBundle.message("version.dotlottie", it) }, lottie).joinToString(" · ")
-        versionLabel.toolTipText = LottieBundle.message(if (spec != null) "version.tooltip.dotlottie" else "version.tooltip.lottie")
+        val tooltip = LottieBundle.message(if (spec != null) "version.tooltip.dotlottie" else "version.tooltip.lottie")
+        versionLabel.text = spec?.let { LottieBundle.message("version.dotlottie", it) }.orEmpty()
+        versionLabel.toolTipText = tooltip
+        versionLabel.isVisible = spec != null
+        // a 1.0 file offers the conversion right after its version, in link text set apart in italics
+        upgradeLink.isVisible = spec == 1 && file.isWritable
+        upgradeLink.text = "<html>&nbsp;<i><u>${LottieBundle.message("version.upgrade")}</u></i></html>"
+        lottieVersionLabel.text = when {
+            lottie == null -> ""
+            spec != null -> " · $lottie"
+            else -> lottie
+        }
+        lottieVersionLabel.toolTipText = tooltip
         // the editor tab shows the dotLottie version: refresh it when a conversion changed it
         if (spec != null && spec != shownSpecVersion) {
             if (shownSpecVersion != null) com.intellij.openapi.fileEditor.ex.FileEditorManagerEx.getInstanceEx(project).updateFilePresentation(file)
@@ -676,6 +730,14 @@ class LottiePreviewPanel(
         updateToolbars()
     }
 
+    /** Pauses a playing animation (its editor tab was hidden, or the IDE lost the focus). */
+    private fun pausePlayback() {
+        if (!playing) return
+        browser?.call("pause")
+        playing = false
+        updateToolbars()
+    }
+
     private fun togglePlayback() {
         if (!playing) lastLocalSeek = 0
         browser?.call(if (playing) "pause" else "play")
@@ -737,11 +799,11 @@ class LottiePreviewPanel(
 
     /** Playback controls in the timeline's header row. */
     private fun createTimelineActions(): DefaultActionGroup = DefaultActionGroup().apply {
-        add(FrameStepAction(LottieBundle.message("action.frame.first"), AllIcons.Actions.Play_first) { 0.0 })
-        add(FrameStepAction(LottieBundle.message("action.frame.previous"), AllIcons.Actions.Play_back) { Math.round(frame) - 1.0 })
+        add(FrameStepAction(keys("action.frame.first", PlaybackKey.FIRST), AllIcons.Actions.Play_first) { 0.0 })
+        add(FrameStepAction(stepKeys("action.frame.previous", PlaybackKey.PREVIOUS, PlaybackKey.BACK_10), AllIcons.Actions.Play_back) { Math.round(frame) - 1.0 })
         add(PlayPauseAction())
-        add(FrameStepAction(LottieBundle.message("action.frame.next"), AllIcons.Actions.Play_forward) { Math.round(frame) + 1.0 })
-        add(FrameStepAction(LottieBundle.message("action.frame.last"), AllIcons.Actions.Play_last) { totalFrames - 1 })
+        add(FrameStepAction(stepKeys("action.frame.next", PlaybackKey.NEXT, PlaybackKey.FORWARD_10), AllIcons.Actions.Play_forward) { Math.round(frame) + 1.0 })
+        add(FrameStepAction(keys("action.frame.last", PlaybackKey.LAST), AllIcons.Actions.Play_last) { totalFrames - 1 })
         add(Separator.getInstance())
         add(LoopAction())
         add(SpeedAction())
@@ -803,10 +865,22 @@ class LottiePreviewPanel(
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
     }
 
-    private inner class PlayPauseAction : PreviewAction(LottieBundle.message("action.play"), AllIcons.Actions.Execute) {
+    /** The action's name with the keys that do the same in the preview, for its tooltip: "First Frame (Home)". */
+    private fun keys(key: String, vararg playbackKeys: PlaybackKey): String {
+        val strokes = PlaybackKeys.strokes().filterValues { it in playbackKeys }.keys
+        return LottieBundle.message("action.with.keys", LottieBundle.message(key), strokes.joinToString(", ") { com.intellij.openapi.keymap.KeymapUtil.getKeystrokeText(it) })
+    }
+
+    /** "Previous Frame (←, Shift+← for 10 frames)". */
+    private fun stepKeys(key: String, one: PlaybackKey, ten: PlaybackKey): String {
+        fun stroke(k: PlaybackKey) = PlaybackKeys.strokes().entries.first { it.value == k }.key.let(com.intellij.openapi.keymap.KeymapUtil::getKeystrokeText)
+        return LottieBundle.message("action.with.keys", LottieBundle.message(key), LottieBundle.message("action.keys.step", stroke(one), stroke(ten)))
+    }
+
+    private inner class PlayPauseAction : PreviewAction(keys("action.play", PlaybackKey.TOGGLE), cz.xprees.lottie.LottieIcons.PLAY) {
         override fun update(e: AnActionEvent) {
-            e.presentation.icon = if (playing) AllIcons.Actions.Pause else AllIcons.Actions.Execute
-            e.presentation.text = LottieBundle.message(if (playing) "action.pause" else "action.play")
+            e.presentation.icon = if (playing) AllIcons.Actions.Pause else cz.xprees.lottie.LottieIcons.PLAY
+            e.presentation.text = keys(if (playing) "action.pause" else "action.play", PlaybackKey.TOGGLE)
             e.presentation.isEnabled = browser != null
         }
 
@@ -843,7 +917,7 @@ class LottiePreviewPanel(
         }
     }
 
-    private inner class LoopAction : DumbAwareToggleAction(LottieBundle.message("action.loop"), null, AllIcons.Actions.Refresh) {
+    private inner class LoopAction : DumbAwareToggleAction(keys("action.loop", PlaybackKey.LOOP), null, AllIcons.Actions.Refresh) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun isSelected(e: AnActionEvent) = loop
         override fun setSelected(e: AnActionEvent, state: Boolean) = setLoop(state)

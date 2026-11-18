@@ -16,6 +16,7 @@ object PlatformDetector {
         "build.gradle", "build.gradle.kts", "libs.versions.toml",
         "Package.swift", "Package.resolved", "Podfile",
         "pubspec.yaml",
+        "tsconfig.json",
     )
     const val MAX_DEPTH = 3
 
@@ -92,6 +93,17 @@ object PlatformDetector {
     /** The Gradle file that matched best: the one the rule matches on its own, else the first. */
     private fun evidence(files: Map<String, String>, rule: Rule): String =
         files.entries.firstOrNull { rule.test(it.value) }?.key ?: files.keys.sortedBy { it.count { c -> c == '/' } }.first()
+
+    /**
+     * Whether the project writes its web code in TypeScript: a `tsconfig.json` or a `typescript` dependency. Projects without any
+     * `package.json` (no web code) count as TypeScript, the default of the snippets.
+     */
+    fun usesTypeScript(files: Map<String, String>): Boolean {
+        val web = files.filterKeys { path -> path.split('/').none { it == "node_modules" || it.startsWith(".") } }
+        val packages = web.filterKeys { name(it) == "package.json" }
+        if (packages.isEmpty()) return true
+        return web.keys.any { name(it) == "tsconfig.json" } || packages.values.any(dependency("typescript"))
+    }
 
     private fun name(path: String) = path.substringAfterLast('/')
 }

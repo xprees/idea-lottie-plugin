@@ -32,6 +32,8 @@ const state = {
   loadToken: 0,
   /** Id of the running dotLottie state machine. */
   stateMachineId: null,
+  /** The state machine is chosen but not started yet: it starts with Play (autoplay is off). */
+  stateMachinePending: false,
   speed: 1,
   loop: true,
   autoplayNext: true,
@@ -268,7 +270,13 @@ const api = {
       applyZoom();
       if (options.marker) p.setMarker(options.marker);
       if (keep && frame > 0) p.setFrame(Math.min(frame, Math.max(0, p.totalFrames - 1)));
-      if (options.stateMachineId) {
+      // autoplay is off: the state machine is chosen but waits for Play, as running it plays the animation (a reload keeps it waiting)
+      const waiting = keep ? state.stateMachinePending : !state.autoplayNext;
+      if (options.stateMachineId && waiting) {
+        state.stateMachineId = options.stateMachineId;
+        state.stateMachinePending = true;
+        send(smSnapshot());
+      } else if (options.stateMachineId) {
         // a reload (the file changed) starts the state machine again, with the new definition
         api.setStateMachine(options.stateMachineId);
       } else if (wasPlaying) {
@@ -287,6 +295,10 @@ const api = {
   play() {
     const p = state.player;
     if (!p) return;
+    if (state.stateMachinePending) {
+      api.setStateMachine(state.stateMachineId);
+      return;
+    }
     if (!p.loop && p.totalFrames > 0 && p.currentFrame >= p.totalFrames - 1) p.setFrame(0);
     p.play();
   },
@@ -344,6 +356,7 @@ const api = {
     if (!p) return;
     if (p.isStateMachineRunning) p.stateMachineStop();
     state.stateMachineId = id || null;
+    state.stateMachinePending = false;
     if (id) {
       if (!p.stateMachineLoad(id)) send({ type: 'smEvent', event: 'Error', error: `The state machine '${id}' could not be loaded` });
       else if (!p.stateMachineStart()) send({ type: 'smEvent', event: 'Error', error: `The state machine '${id}' could not be started` });
