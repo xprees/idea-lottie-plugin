@@ -14,6 +14,7 @@ import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
@@ -27,21 +28,39 @@ import cz.xprees.lottie.dotlottie.DotLottieFiles
 import cz.xprees.lottie.json.MiniJson
 
 /**
- * A state machine file (`s/<id>.json`) of a `.lottie` archive, opened as a JSON document. It has the archive's path plus the entry
- * as its path, so the tab tooltip and Copy Path name both.
+ * State machine files (`s/<id>.json`) of `.lottie` archives, opened as JSON documents. They are plain [LightVirtualFile]s tagged
+ * with their archive and id: a platform class, so that editors and undo history that outlive this plugin (when it is disabled or
+ * updated without a restart) hold none of its classes.
  */
-class StateMachineVirtualFile(val archive: VirtualFile, val stateMachineId: String, text: String) :
-    LightVirtualFile("$stateMachineId.json", JsonFileType.INSTANCE, text) {
+object StateMachineVirtualFile {
 
-    val entryPath get() = entryPath(stateMachineId)
+    private val ARCHIVE = Key.create<VirtualFile>("cz.xprees.lottie.stateMachine.archive")
+    private val ID = Key.create<String>("cz.xprees.lottie.stateMachine.id")
 
-    override fun getPath(): String = "${archive.path}!/$entryPath"
+    fun create(archive: VirtualFile, id: String, text: String): LightVirtualFile =
+        LightVirtualFile("$id.json", JsonFileType.INSTANCE, text).apply {
+            putUserData(ARCHIVE, archive)
+            putUserData(ID, id)
+            isWritable = archive.isWritable
+            // the default creation trace is a stack trace through this plugin's code, which would keep it from unloading
+            com.intellij.psi.PsiInvalidElementAccessException.setCreationTrace(this, "state machine $id of ${archive.path}")
+        }
 
-    override fun isWritable() = archive.isValid && archive.isWritable
+    /** The archive [file] was opened from, if it is a state machine file. */
+    fun archive(file: VirtualFile?): VirtualFile? = file?.getUserData(ARCHIVE)
 
-    companion object {
-        fun entryPath(id: String) = "s/$id.json"
+    /** The state machine id of [file], if it is a state machine file. */
+    fun id(file: VirtualFile?): String? = file?.getUserData(ID)
+
+    fun isStateMachine(file: VirtualFile?) = archive(file) != null
+
+    /** Where [file] lives: the archive's path plus the entry (for the tab tooltip). */
+    fun path(file: VirtualFile): String? {
+        val archive = archive(file) ?: return null
+        return "${archive.path}!/${entryPath(id(file) ?: return null)}"
     }
+
+    fun entryPath(id: String) = "s/$id.json"
 }
 
 /**
@@ -52,19 +71,19 @@ class StateMachineVirtualFile(val archive: VirtualFile, val stateMachineId: Stri
 @Service(Service.Level.PROJECT)
 class StateMachineDocuments(private val project: Project) : Disposable {
 
-    private class Open(val file: StateMachineVirtualFile, val document: Document, val disposable: Disposable) {
+    private class Open(val file: LightVirtualFile, val archive: VirtualFile, val id: String, val document: Document, val disposable: Disposable) {
         /** The text last written to or read from the archive. */
         var synced: String = document.text
         val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, disposable)
     }
 
-    private val open = LinkedHashMap<StateMachineVirtualFile, Open>()
+    private val open = LinkedHashMap<VirtualFile, Open>()
 
     init {
         val connection = project.messageBus.connect(this)
         connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
             override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
-                if (file !is StateMachineVirtualFile || source.isFileOpen(file)) return
+                if (!StateMachineVirtualFile.isStateMachine(file) || source.isFileOpen(file)) return
                 open.remove(file)?.let {
                     write(it)
                     Disposer.dispose(it.disposable)
@@ -75,21 +94,21 @@ class StateMachineDocuments(private val project: Project) : Disposable {
             override fun after(events: List<VFileEvent>) {
                 val changed = events.filterIsInstance<VFileContentChangeEvent>().map { it.file }.toSet()
                 if (changed.isEmpty()) return
-                ApplicationManager.getApplication().invokeLater({ for (o in open.values.filter { it.file.archive in changed }) reload(o) }, project.disposed)
+                ApplicationManager.getApplication().invokeLater({ for (o in open.values.filter { it.archive in changed }) reload(o) }, project.disposed)
             }
         })
     }
 
     /** Opens state machine [id] of [archive] in an editor (the existing tab when it is already open). */
-    fun open(archive: VirtualFile, id: String): StateMachineVirtualFile? {
-        val file = open.keys.firstOrNull { it.archive == archive && it.stateMachineId == id } ?: create(archive, id) ?: return null
+    fun open(archive: VirtualFile, id: String): VirtualFile? {
+        val file = open.values.firstOrNull { it.archive == archive && it.id == id }?.file ?: create(archive, id) ?: return null
         OpenFileDescriptor(project, file).navigate(true)
         return file
     }
 
     /** Writes edits of [archive]'s open state machine documents that are still waiting (before another change of the archive). */
     fun flush(archive: VirtualFile) {
-        for (o in open.values.filter { it.file.archive == archive }) {
+        for (o in open.values.filter { it.archive == archive }) {
             o.alarm.cancelAllRequests()
             write(o)
         }
@@ -97,14 +116,14 @@ class StateMachineDocuments(private val project: Project) : Disposable {
 
     /** The open document of state machine [id] of [archive], if any (for tests). */
     fun document(archive: VirtualFile, id: String): Document? =
-        open.entries.firstOrNull { it.key.archive == archive && it.key.stateMachineId == id }?.value?.document
+        open.values.firstOrNull { it.archive == archive && it.id == id }?.document
 
-    private fun create(archive: VirtualFile, id: String): StateMachineVirtualFile? {
+    private fun create(archive: VirtualFile, id: String): VirtualFile? {
         val text = runCatching { DotLottieArchive.read(archive.contentsToByteArray()).stateMachineText(id) }.getOrNull() ?: return null
-        val file = StateMachineVirtualFile(archive, id, text)
+        val file = StateMachineVirtualFile.create(archive, id, text)
         val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
-        val disposable = Disposer.newDisposable(this, "Lottie state machine ${file.path}")
-        val entry = Open(file, document, disposable)
+        val disposable = Disposer.newDisposable(this, "Lottie state machine ${StateMachineVirtualFile.path(file)}")
+        val entry = Open(file, archive, id, document, disposable)
         document.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) {
                 if (entry.document.text == entry.synced) return
@@ -118,23 +137,41 @@ class StateMachineDocuments(private val project: Project) : Disposable {
 
     private fun write(o: Open) {
         val text = o.document.text
-        if (text == o.synced || !o.file.archive.isValid || MiniJson.errorOf(text) != null) return
+        if (text == o.synced || !o.archive.isValid || MiniJson.errorOf(text) != null) return
         o.synced = text
         DotLottieFiles.replaceEntries(
-            project, o.file.archive, mapOf(o.file.entryPath to text.toByteArray(Charsets.UTF_8)),
+            project, o.archive, mapOf(StateMachineVirtualFile.entryPath(o.id) to text.toByteArray(Charsets.UTF_8)),
             LottieBundle.message("sm.command.edit.json"), undoable = false,
         )
     }
 
     private fun reload(o: Open) {
-        if (!o.file.archive.isValid) return
-        val text = runCatching { DotLottieArchive.read(o.file.archive.contentsToByteArray()).stateMachineText(o.file.stateMachineId) }.getOrNull() ?: return
+        if (!o.archive.isValid) return
+        val text = runCatching { DotLottieArchive.read(o.archive.contentsToByteArray()).stateMachineText(o.id) }.getOrNull() ?: return
         if (text == o.synced) return
         // edits waiting to be written win; they are written next and replace the archive's version
         if (o.document.text != o.synced) return
         o.synced = text
         WriteCommandAction.writeCommandAction(project).withName(LottieBundle.message("sm.command.reload")).run<RuntimeException> {
             o.document.setText(text)
+        }
+    }
+
+    /**
+     * Writes edits still waiting and closes every state machine editor: once this plugin unloads, nothing would write them back into
+     * their archives, and an editor opened by this plugin keeps its classes reachable.
+     */
+    fun closeAll() {
+        val entries = open.values.toList()
+        for (o in entries) {
+            o.alarm.cancelAllRequests()
+            write(o)
+        }
+        open.clear()
+        val manager = FileEditorManager.getInstance(project)
+        for (o in entries) {
+            manager.closeFile(o.file)
+            Disposer.dispose(o.disposable)
         }
     }
 

@@ -1,8 +1,6 @@
 package cz.xprees.lottie.dotlottie
 
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.command.undo.BasicUndoableAction
-import com.intellij.openapi.command.undo.UndoManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 
@@ -22,12 +20,8 @@ object DotLottieFiles {
             val before = file.contentsToByteArray()
             val after = transform(before)
             file.setBinaryContent(after)
-            if (undoable) {
-                UndoManager.getInstance(project).undoableActionPerformed(object : BasicUndoableAction(file) {
-                    override fun undo() = file.setBinaryContent(before)
-                    override fun redo() = file.setBinaryContent(after)
-                })
-            }
+            // recorded through a platform document, so that the undo stacks hold none of this plugin's classes (see DotLottieUndoHistory)
+            if (undoable) DotLottieUndoHistory.getInstance().record(file, before, after)
         }
     }
 }

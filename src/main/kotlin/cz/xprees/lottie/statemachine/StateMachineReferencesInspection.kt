@@ -5,7 +5,7 @@ import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.json.psi.JsonFile
-import com.intellij.openapi.util.Key
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import cz.xprees.lottie.dotlottie.DotLottieArchive
 import cz.xprees.lottie.editor.LottiePsi
@@ -18,9 +18,9 @@ class StateMachineReferencesInspection : LocalInspectionTool() {
 
     override fun checkFile(file: PsiFile, manager: InspectionManager, isOnTheFly: Boolean): Array<ProblemDescriptor>? {
         val json = file as? JsonFile ?: return null
-        val virtualFile = json.virtualFile as? StateMachineVirtualFile ?: json.originalFile.virtualFile as? StateMachineVirtualFile ?: return null
+        val archive = StateMachineVirtualFile.archive(json.virtualFile) ?: StateMachineVirtualFile.archive(json.originalFile.virtualFile) ?: return null
         val machine = StateMachine.parse(json.text) ?: return null
-        val problems = StateMachineChecker.check(machine, context(virtualFile))
+        val problems = StateMachineChecker.check(machine, context(archive))
         return problems.mapNotNull { problem ->
             val element = LottiePsi.findByPath(json, problem.path) ?: return@mapNotNull null
             manager.createProblemDescriptor(element, problem.message, isOnTheFly, emptyArray(), ProblemHighlightType.GENERIC_ERROR_OR_WARNING)
@@ -30,16 +30,16 @@ class StateMachineReferencesInspection : LocalInspectionTool() {
     private class CachedContext(val stamp: Long, val context: StateMachineContext?)
 
     /** The archive's animations, themes, markers and layers, cached until the archive changes. */
-    private fun context(file: StateMachineVirtualFile): StateMachineContext? {
-        val archive = file.archive
+    private fun context(archive: VirtualFile): StateMachineContext? {
         if (!archive.isValid) return null
-        archive.getUserData(CONTEXT)?.takeIf { it.stamp == archive.modificationStamp }?.let { return it.context }
+        CONTEXTS[archive]?.takeIf { it.stamp == archive.modificationStamp }?.let { return it.context }
         val context = runCatching { DotLottieArchive.read(archive.contentsToByteArray()).stateMachineContext() }.getOrNull()
-        archive.putUserData(CONTEXT, CachedContext(archive.modificationStamp, context))
+        CONTEXTS[archive] = CachedContext(archive.modificationStamp, context)
         return context
     }
 
     companion object {
-        private val CONTEXT = Key.create<CachedContext>("cz.xprees.lottie.stateMachineContext")
+        // here rather than in the archive's user data, which outlives this plugin and would keep it from unloading
+        private val CONTEXTS: MutableMap<VirtualFile, CachedContext> = com.intellij.util.containers.ContainerUtil.createConcurrentWeakMap()
     }
 }

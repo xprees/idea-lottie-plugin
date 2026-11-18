@@ -16,6 +16,7 @@ import cz.xprees.lottie.lang.LottieFiles
 import cz.xprees.lottie.statemachine.StateMachine
 import cz.xprees.lottie.statemachine.StateMachineDocuments
 import cz.xprees.lottie.statemachine.StateMachineReferencesInspection
+import cz.xprees.lottie.statemachine.StateMachineVirtualFile
 import org.assertj.core.api.Assertions.assertThat
 import java.io.File
 
@@ -62,7 +63,7 @@ class StateMachinePlatformTest : BasePlatformTestCase() {
         val file = archive()
         val documents = StateMachineDocuments.getInstance(project)
         val opened = documents.open(file, "toggle")!!
-        assertThat(opened.path).endsWith("interactive.lottie!/s/toggle.json")
+        assertThat(StateMachineVirtualFile.path(opened)).endsWith("interactive.lottie!/s/toggle.json")
         val document = documents.document(file, "toggle")!!
         assertThat(document.text).contains("\"initial\": \"off\"")
 
@@ -83,6 +84,19 @@ class StateMachinePlatformTest : BasePlatformTestCase() {
         dispatch()
         assertThat(document.text).contains("\"taps\"").doesNotContain("\"clicks\"")
         FileEditorManager.getInstance(project).closeFile(opened)
+    }
+
+    fun `test before the plugin unloads, waiting edits are written and state machine editors closed`() {
+        val file = archive()
+        val documents = StateMachineDocuments.getInstance(project)
+        val opened = documents.open(file, "toggle")!!
+        val document = documents.document(file, "toggle")!!
+        WriteCommandAction.runWriteCommandAction(project) { document.setText(document.text.replace("\"initial\": \"off\"", "\"initial\": \"on\"")) }
+
+        documents.closeAll()
+        assertThat(StateMachine.parse(stateMachineText(file))!!.initial).isEqualTo("on")
+        assertThat(FileEditorManager.getInstance(project).isFileOpen(opened)).isFalse()
+        assertThat(documents.document(file, "toggle")).isNull()
     }
 
     fun `test the state machine schema applies to state machine documents`() {
