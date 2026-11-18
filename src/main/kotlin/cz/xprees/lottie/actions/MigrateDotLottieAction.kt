@@ -17,6 +17,7 @@ import cz.xprees.lottie.dotlottie.DotLottieArchive
 import cz.xprees.lottie.dotlottie.DotLottieFiles
 import cz.xprees.lottie.dotlottie.DotLottieMigration
 import cz.xprees.lottie.lang.LottieFiles
+import cz.xprees.lottie.statemachine.StateMachineVirtualFile
 import java.util.function.Function
 import javax.swing.JComponent
 
@@ -113,17 +114,28 @@ internal object DotLottieVersions {
     }
 }
 
-/** The dotLottie version after the name in a `.lottie` file's editor tab (`toggle.lottie · v2`). */
+/**
+ * Editor tabs: the dotLottie version after the name of a `.lottie` file (`toggle.lottie · v2`), and the archive after the name of a
+ * state machine opened from one (`toggle.json · toggle.lottie`).
+ */
 class DotLottieTabTitleProvider : com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider {
     override fun getEditorTabTitle(project: Project, file: VirtualFile): String? {
+        StateMachineVirtualFile.archive(file)?.let { archive ->
+            return LottieBundle.message("tab.title.state.machine", file.presentableName, archive.name)
+        }
         if (!LottieFiles.isDotLottie(file)) return null
         val version = DotLottieVersions.version(file) ?: return null
         return LottieBundle.message("tab.title.version", file.presentableName, version)
     }
 
-    /** A state machine opened from a `.lottie` archive shows where it lives: the archive's path plus the entry. */
-    override fun getEditorTabTooltipText(project: Project, file: VirtualFile): String? =
-        cz.xprees.lottie.statemachine.StateMachineVirtualFile.path(file)
+    /**
+     * The tooltip of a state machine's tab: the archive's path plus the entry. Platforms from 2026.3 call this method (it replaces
+     * the deprecated `getEditorTabTooltipText`); it is not marked `override` because the interface of the oldest supported platform
+     * (2026.1) doesn't have it yet, so on 2026.1 and 2026.2 the tab shows the default tooltip and the title still names the archive.
+     */
+    @Suppress("unused")
+    fun getEditorTabTooltipHtml(project: Project, file: VirtualFile): com.intellij.openapi.util.text.HtmlChunk? =
+        StateMachineVirtualFile.path(file)?.let { com.intellij.openapi.util.text.HtmlChunk.text(it) }
 }
 
 /**

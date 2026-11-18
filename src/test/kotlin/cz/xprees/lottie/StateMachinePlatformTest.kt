@@ -59,6 +59,16 @@ class StateMachinePlatformTest : BasePlatformTestCase() {
         assertThat(stateMachineText(file)).contains("\"enabled\"")
     }
 
+    fun `test a state machine's editor tab names its archive`() {
+        val file = archive()
+        val opened = StateMachineDocuments.getInstance(project).open(file, "toggle")!!
+        val tabs = cz.xprees.lottie.actions.DotLottieTabTitleProvider()
+        assertThat(tabs.getEditorTabTitle(project, opened)).isEqualTo("toggle.json · ${file.name}")
+        assertThat(tabs.getEditorTabTooltipHtml(project, opened)!!.toString()).endsWith("${file.name}!/s/toggle.json")
+        assertThat(tabs.getEditorTabTitle(project, file)).isEqualTo("${file.name} · v2")
+        FileEditorManager.getInstance(project).closeFile(opened)
+    }
+
     fun `test a state machine opens as JSON and edits are written back`() {
         val file = archive()
         val documents = StateMachineDocuments.getInstance(project)
