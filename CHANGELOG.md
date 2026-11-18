@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The editor tab of a state machine opened from a `.lottie` file names the archive (`toggle.json · toggle.lottie`); from 2026.3 its
+  tooltip shows the full path
+
+### Fixed
+
+- No use of deprecated platform API (`EditorTabTitleProvider.getEditorTabTooltipText`), which the JetBrains Marketplace verifier
+  reported
+
 ## [2026.3.8] - 2026-11-18
 
 ### Added
