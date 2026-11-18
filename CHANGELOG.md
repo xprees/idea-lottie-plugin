@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- No use of deprecated platform API (`ReadAction.compute`), which the JetBrains Marketplace verifier reported
+- Fewer reasons for the IDE to ask for a restart when the plugin is disabled, updated or uninstalled: undo history of `.lottie`
+  edits, cached file information and open state machine editors no longer keep the plugin loaded (state machine edits still
+  waiting are written first)
+
+## [2026.3.4] - 2026-11-18
+
 ### Added
 
 - More platforms in the *Code* tab: dotLottie Vue, Svelte, Solid, Web Component, React Native and Flutter, also guessed from the
@@ -21,10 +30,6 @@
 ### Fixed
 
 - Playback keys work while the read-only dotLottie details have the focus
-- No use of deprecated platform API (`ReadAction.compute`), which the JetBrains Marketplace verifier reported
-- Fewer reasons for the IDE to ask for a restart when the plugin is disabled, updated or uninstalled: undo history of `.lottie`
-  edits, cached file information and open state machine editors no longer keep the plugin loaded (state machine edits still
-  waiting are written first)
 
 ## [2026.3.3] - 2026-11-17
 
@@ -85,6 +90,7 @@
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
 
-[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.3...HEAD
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.4...HEAD
+[2026.3.4]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.3...2026.3.4
 [2026.3.3]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.2...2026.3.3
 [2026.3.2]: https://github.com/xprees/idea-lottie-plugin/commits/2026.3.2
