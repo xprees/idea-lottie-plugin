@@ -20,7 +20,9 @@ object RecolorWriter {
     /** Recolors [usages] in the JSON [document], changing only the numbers and strings involved (the file keeps its layout). */
     fun toDocument(project: Project, document: Document, usages: List<ColorUsage>, to: LottieColor): Int {
         val manager = PsiDocumentManager.getInstance(project)
-        val psi = com.intellij.openapi.application.ReadAction.compute<JsonFile?, RuntimeException> { manager.getPsiFile(document) as? JsonFile } ?: return 0
+        // Application.runReadAction(Computable): ReadAction.compute is deprecated in newer platforms
+        val psi = com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction(com.intellij.openapi.util.Computable { manager.getPsiFile(document) as? JsonFile }) ?: return 0
         val edits = Recolor.edits(usages, to)
         var changed = 0
         // the document is committed and searched inside the command: a palette click is not a write-safe context
