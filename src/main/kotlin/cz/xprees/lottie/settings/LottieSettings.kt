@@ -28,7 +28,10 @@ class LottieSettings : PersistentStateComponent<LottieSettings.State> {
         /** Recognize plain `.json` files by their content (the `.lottie.json` name always counts). */
         var sniffJson: Boolean = true
         var defaultLayout: DefaultLayout = DefaultLayout.EDITOR_AND_PREVIEW
-        var autoplay: Boolean = true
+        /** Off by default: playing every animation that opens slows down opening it. */
+        var autoplay: Boolean = false
+        /** Pause the preview when the IDE window loses focus (it always pauses when its editor tab is hidden). */
+        var pauseWhenInactive: Boolean = true
         var loop: Boolean = true
         var background: Background = Background.CHECKERBOARD
         /** `#rrggbb`, used with [Background.CUSTOM]. */
@@ -41,6 +44,8 @@ class LottieSettings : PersistentStateComponent<LottieSettings.State> {
         var previewSync: Boolean = true
         /** Hovering a palette color outlines the shapes using it, or dims the other colors. */
         var paletteHighlight: PaletteHighlight = PaletteHighlight.OUTLINE
+        /** The banner over dotLottie 1.0 files that offers converting them to 2.0. */
+        var dotLottieV1Banner: Boolean = true
     }
 
     private var state = State()

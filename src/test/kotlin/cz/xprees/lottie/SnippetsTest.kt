@@ -45,7 +45,82 @@ class SnippetsTest {
             }
             assertThat(snippets.notes.contains(SnippetNote.JSON_ONLY)).describedAs(platform.name).isEqualTo(!platform.dotLottieFiles)
             snippets.snippets.forEach { assertThat(it.code).describedAs("${platform.name} ${it.kind}").isNotBlank() }
+            // following the markers: in the setup of the web players, a snippet of its own, or a note saying why there is none
+            val follows = snippets.first(SnippetKind.SETUP)!!.code.contains("currentMarker") || SnippetKind.MARKER_EVENTS in kinds
+            assertThat(follows || SnippetNote.NO_MARKER_EVENTS in snippets.notes).describedAs(platform.name).isTrue()
         }
+    }
+
+    @Test
+    fun `web players get typed components that play and follow markers`() {
+        val vue = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_VUE, interactive).first(SnippetKind.SETUP)!!
+        assertThat(vue.extension).isEqualTo("vue")
+        assertThat(vue.code).contains(
+            "<script setup lang=\"ts\">",
+            "import { DotLottieVue, type DotLottie, type DotLottieVueInstance } from '@lottiefiles/dotlottie-vue';",
+            "type MarkerName = 'intro' | 'hit';",
+            "const playerRef = useTemplateRef<DotLottieVueInstance>('player');",
+            "const dotLottie = shallowRef<DotLottie | null>(null);",
+            "dotLottie.value = instance;",
+            "currentMarker.value = instance.markers().find((m) => currentFrame >= m.start && currentFrame < m.end)?.name;",
+            "case 'intro':",
+            "function playMarker(name: MarkerName) {",
+        )
+        assertThat(vue.code).doesNotContain("// const")
+        val react = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_REACT, interactive).first(SnippetKind.SETUP)!!
+        assertThat(react.extension).isEqualTo("tsx")
+        assertThat(react.code).contains("useState<DotLottie | null>(null)", "type FrameEvent", "dotLottie.addEventListener('frame', onFrame);", "}, [currentMarker]);")
+        // the marker one-liners are code, not a component: highlighted as TypeScript
+        assertThat(SnippetGenerator.generate(CodePlatform.DOTLOTTIE_VUE, interactive).first(SnippetKind.PLAY_MARKER)!!.extension).isEqualTo("ts")
+        val web = SnippetGenerator.generate(CodePlatform.LOTTIE_WEB, json).first(SnippetKind.SETUP)!!
+        assertThat(web.code).contains("{ name: 'hit', start: 15, end: 16 },", "animation.firstFrame + animation.currentFrame")
+        val android = SnippetGenerator.generate(CodePlatform.LOTTIE_ANDROID, json)
+        assertThat(android.first(SnippetKind.MARKER_EVENTS)!!.code).contains("animationView.composition?.markers", "\"intro\" -> {")
+        assertThat(SnippetGenerator.generate(CodePlatform.LOTTIE_IOS, json).notes).contains(SnippetNote.NO_MARKER_EVENTS)
+        // no markers, nothing about them
+        val plain = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_REACT, json.copy(markers = emptyList()))
+        assertThat(plain.first(SnippetKind.SETUP)!!.code).doesNotContain("Marker", "useEffect")
+        assertThat(plain.notes).doesNotContain(SnippetNote.NO_MARKER_EVENTS)
+    }
+
+    @Test
+    fun `javascript leaves the types out`() {
+        for (platform in CodePlatform.entries.filter { it.typeScript }) {
+            val js = SnippetGenerator.generate(platform, interactive, typeScript = false)
+            for (snippet in js.snippets) {
+                assertThat(snippet.code).describedAs("${platform.name} ${snippet.kind}").doesNotContain("type MarkerName", ": MarkerName", "<DotLottie | null>", "lang=\"ts\"", "type DotLottie")
+                assertThat(snippet.extension).describedAs("${platform.name} ${snippet.kind}").isNotIn("ts", "tsx")
+            }
+        }
+        assertThat(SnippetGenerator.generate(CodePlatform.DOTLOTTIE_VUE, interactive, typeScript = false).first(SnippetKind.SETUP)!!.code)
+            .contains("<script setup>", "useTemplateRef('player')", "shallowRef(null)")
+    }
+
+    @Test
+    fun `the agent prompt describes the animation and the player`() {
+        val prompt = cz.xprees.lottie.snippets.AgentPrompt.build(CodePlatform.DOTLOTTIE_VUE, "dotLottie Vue", true, interactive)
+        assertThat(prompt).contains(
+            "`app/src/main/assets/toggle.lottie` (a dotLottie file)",
+            "dotLottie Vue (`@lottiefiles/dotlottie-vue`), TypeScript",
+            "- `intro`: frames 0–10",
+            "- `hit`: frames 15–16",
+            "State machine `toggle`",
+            "`clicks` (number, now 3.0)",
+            "`reset` (event, fired)",
+            "custom events it sends: `switched-on`",
+            "```vue\n<script setup lang=\"ts\">",
+        )
+        val ios = cz.xprees.lottie.snippets.AgentPrompt.build(CodePlatform.LOTTIE_IOS, "Lottie iOS", true, interactive)
+        assertThat(ios).contains("has no state machines", "```swift").doesNotContain("TypeScript")
+    }
+
+    @Test
+    fun `typescript is guessed from the project`() {
+        assertThat(PlatformDetector.usesTypeScript(mapOf("package.json" to "{}", "tsconfig.json" to "{}"))).isTrue()
+        assertThat(PlatformDetector.usesTypeScript(mapOf("web/package.json" to """{"devDependencies":{"typescript":"5"}}"""))).isTrue()
+        assertThat(PlatformDetector.usesTypeScript(mapOf("package.json" to """{"dependencies":{"vue":"3"}}"""))).isFalse()
+        assertThat(PlatformDetector.usesTypeScript(mapOf("node_modules/x/tsconfig.json" to "{}", "package.json" to "{}"))).isFalse()
+        assertThat(PlatformDetector.usesTypeScript(mapOf("app/build.gradle" to ""))).isTrue()
     }
 
     @Test
@@ -101,12 +176,12 @@ class SnippetsTest {
     fun `dotLottie framework players get their own setup and instance access`() {
         val vue = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_VUE, interactive)
         assertThat(vue.first(SnippetKind.SETUP)!!.code).contains("<DotLottieVue ref=\"player\" src=\"/toggle.lottie\" autoplay loop state-machine-id=\"toggle\" />", "getDotLottieInstance()")
-        assertThat(vue.first(SnippetKind.PLAY_MARKER, "intro")!!.code).isEqualTo("dotLottie.setMarker('intro');\ndotLottie.play();")
+        assertThat(vue.first(SnippetKind.PLAY_MARKER, "intro")!!.code).isEqualTo("dotLottie.value?.setMarker('intro');\ndotLottie.value?.play();")
         val svelte = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_SVELTE, interactive)
-        assertThat(svelte.first(SnippetKind.SETUP)!!.code).contains("dotLottieRefCallback={(ref) => (dotLottie = ref)}", "stateMachineId=\"toggle\"")
+        assertThat(svelte.first(SnippetKind.SETUP)!!.code).contains("dotLottieRefCallback={(instance) => (dotLottie = instance)}", "stateMachineId=\"toggle\"")
         assertThat(svelte.first(SnippetKind.INPUT, "isOn")!!.code).startsWith("dotLottie?.stateMachineSetBooleanInput")
         val solid = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_SOLID, interactive)
-        assertThat(solid.first(SnippetKind.SETUP)!!.code).contains("createSignal(null)", "<DotLottieSolid")
+        assertThat(solid.first(SnippetKind.SETUP)!!.code).contains("createSignal<DotLottie | null>(null)", "<DotLottieSolid")
         assertThat(solid.first(SnippetKind.STATE_MACHINE)!!.code).isEqualTo("dotLottie()?.stateMachineLoad('toggle');\ndotLottie()?.stateMachineStart();")
         val wc = SnippetGenerator.generate(CodePlatform.DOTLOTTIE_WEB_COMPONENT, interactive)
         assertThat(wc.first(SnippetKind.SETUP)!!.code).contains("<dotlottie-wc id=\"lottie\" src=\"/toggle.lottie\" autoplay loop statemachineid=\"toggle\">", ".dotLottie;")

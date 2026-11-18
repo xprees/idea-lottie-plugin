@@ -37,8 +37,19 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
         renderer = textListCellRenderer<CodePlatform?> { platform -> platform?.let(::label) }
         isSwingPopup = false
     }
+    /** TypeScript or JavaScript, for the web players. */
+    private val languageCombo = ComboBox(arrayOf(true, false)).apply {
+        renderer = textListCellRenderer<Boolean?> { ts -> ts?.let { LottieBundle.message(if (it) "code.language.ts" else "code.language.js") } }
+        isSwingPopup = false
+        toolTipText = LottieBundle.message("code.language.tooltip")
+    }
     private val detectedLabel = JBLabel().apply {
         foreground = UIUtil.getContextHelpForeground()
+        font = JBUI.Fonts.smallFont()
+    }
+    private val promptLink = com.intellij.ui.components.ActionLink(LottieBundle.message("code.prompt.copy")) { copyPrompt() }.apply {
+        setIcon(AllIcons.Actions.Copy, false)
+        toolTipText = LottieBundle.message("code.prompt.tooltip")
         font = JBUI.Fonts.smallFont()
     }
     private val content = WidthTrackingPanel().apply {
@@ -47,7 +58,7 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
     }
     private val scroll = JBScrollPane(content, JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER).apply { border = JBUI.Borders.empty() }
     private var context: SnippetContext? = null
-    private var shown: Pair<CodePlatform, SnippetContext>? = null
+    private var shown: Triple<CodePlatform, Boolean, SnippetContext>? = null
     private var updating = false
 
     /** Rebuilding the snippets waits until the tab is visible. */
@@ -63,7 +74,11 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
             border = JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBColor.border()), JBUI.Borders.empty(4, 8))
             add(JBLabel(LottieBundle.message("code.platform")), BorderLayout.WEST)
             add(combo, BorderLayout.CENTER)
-            add(detectedLabel, BorderLayout.SOUTH)
+            add(languageCombo, BorderLayout.EAST)
+            add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
+                add(detectedLabel, BorderLayout.CENTER)
+                add(promptLink, BorderLayout.EAST)
+            }, BorderLayout.SOUTH)
         }, BorderLayout.NORTH)
         add(scroll, BorderLayout.CENTER)
         combo.addActionListener {
@@ -71,6 +86,12 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
             val platform = combo.selectedItem as? CodePlatform ?: return@addActionListener
             // picking the detected platform goes back to following the project
             platforms.picked = platform.takeIf { it != platforms.detected.firstOrNull()?.platform }
+        }
+        languageCombo.addActionListener {
+            if (updating) return@addActionListener
+            val ts = languageCombo.selectedItem as? Boolean ?: return@addActionListener
+            // picking what the project uses goes back to following it
+            platforms.pickedTypeScript = ts.takeIf { it != platforms.typeScriptDetected }
         }
         project.messageBus.connect(this).subscribe(CodePlatforms.TOPIC, CodePlatforms.Listener { refresh() })
         platforms.detect()
@@ -91,9 +112,12 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
 
     private fun refresh() {
         val platform = platforms.current
+        val ts = platforms.typeScript
         updating = true
         combo.selectedItem = platform
+        languageCombo.selectedItem = ts
         updating = false
+        languageCombo.isVisible = platform.typeScript
         val detected = platforms.detected.firstOrNull()
         detectedLabel.text = when {
             detected != null && platforms.picked == null -> LottieBundle.message("code.detected.from", detected.evidence)
@@ -102,36 +126,60 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
             else -> " "
         }
         val context = context ?: return
-        if (!active || shown == platform to context) return
-        val otherPlatform = shown?.first != platform
-        shown = platform to context
-        rebuild(platform, context)
+        if (!active || shown == Triple(platform, ts, context)) return
+        val otherPlatform = shown?.first != platform || shown?.second != ts
+        shown = Triple(platform, ts, context)
+        rebuild(platform, ts, context)
         // another platform is new code: start at its top (edits and live values keep the place)
         if (otherPlatform) javax.swing.SwingUtilities.invokeLater { scroll.verticalScrollBar.value = 0 }
     }
 
-    private fun rebuild(platform: CodePlatform, context: SnippetContext) {
+    private fun rebuild(platform: CodePlatform, ts: Boolean, context: SnippetContext) {
         content.removeAll()
-        val snippets = SnippetGenerator.generate(platform, context)
+        val snippets = SnippetGenerator.generate(platform, context, ts)
         val name = name(platform)
         content.add(hint(LottieBundle.message("code.package", platform.packageName)))
         for (note in snippets.notes) {
             content.add(hint(LottieBundle.message("code.note.${note.name.lowercase()}", name)))
         }
         if (context.markers.isEmpty()) content.add(hint(LottieBundle.message(if (context.dotLottie) "code.no.markers.lottie" else "code.no.markers")))
-        val fileType = FileTypeManager.getInstance().getFileTypeByExtension(platform.extension).takeIf { it != com.intellij.openapi.fileTypes.UnknownFileType.INSTANCE }
-            ?: PlainTextFileType.INSTANCE
         for (snippet in snippets.snippets) {
-            content.add(section(title(snippet), snippet.code, fileType))
+            content.add(section(title(snippet), snippet.code, fileType(snippet.extension)))
         }
         content.add(Box.createVerticalGlue())
         content.revalidate()
         content.repaint()
     }
 
+    /**
+     * The file type that highlights code with [extension]; without the language's plugin (Vue, Svelte, TypeScript in a Community
+     * IDE) the closest one there is, so the code still gets some highlighting.
+     */
+    private fun fileType(extension: String): com.intellij.openapi.fileTypes.FileType {
+        val manager = FileTypeManager.getInstance()
+        for (candidate in listOf(extension) + FALLBACKS[extension].orEmpty()) {
+            val type = manager.getFileTypeByExtension(candidate)
+            if (type != com.intellij.openapi.fileTypes.UnknownFileType.INSTANCE && type != PlainTextFileType.INSTANCE) return type
+        }
+        return PlainTextFileType.INSTANCE
+    }
+
+    private fun copyPrompt() {
+        val context = context ?: return
+        val platform = platforms.current
+        val prompt = AgentPrompt.build(platform, name(platform), platforms.typeScript, context)
+        CopyPasteManager.getInstance().setContents(StringSelection(prompt))
+        com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+            .createHtmlTextBalloonBuilder(LottieBundle.message("code.prompt.copied"), com.intellij.openapi.ui.MessageType.INFO, null)
+            .setFadeoutTime(2500)
+            .createBalloon()
+            .show(com.intellij.ui.awt.RelativePoint.getSouthOf(promptLink), com.intellij.openapi.ui.popup.Balloon.Position.below)
+    }
+
     private fun title(snippet: Snippet): String = when (snippet.kind) {
         SnippetKind.SETUP -> LottieBundle.message("code.section.setup")
         SnippetKind.PLAY_MARKER -> LottieBundle.message("code.section.marker", snippet.subject.orEmpty())
+        SnippetKind.MARKER_EVENTS -> LottieBundle.message("code.section.marker.events")
         SnippetKind.STATE_MACHINE -> LottieBundle.message("code.section.state.machine", snippet.subject.orEmpty())
         SnippetKind.INPUT -> {
             val event = context?.inputs?.firstOrNull { it.name == snippet.subject }?.type == cz.xprees.lottie.statemachine.InputType.EVENT
@@ -183,4 +231,14 @@ class CodeSnippetsPanel(private val project: Project, parent: Disposable) : JPan
     }
 
     override fun dispose() {}
+
+    private companion object {
+        val FALLBACKS = mapOf(
+            "tsx" to listOf("ts", "jsx", "js"),
+            "ts" to listOf("js"),
+            "jsx" to listOf("js"),
+            "vue" to listOf("html"),
+            "svelte" to listOf("html"),
+        )
+    }
 }

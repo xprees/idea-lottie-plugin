@@ -28,7 +28,23 @@ class CodePlatforms(private val project: Project) : Disposable {
     var detectionDone = false
         private set
 
+    /** Whether the project's web code is TypeScript, as its files suggest (see [PlatformDetector.usesTypeScript]). */
+    @Volatile
+    var typeScriptDetected = true
+        private set
+
     private val started = AtomicBoolean()
+
+    /** TypeScript or JavaScript as picked in the Code tab, or null to follow [typeScriptDetected]. */
+    var pickedTypeScript: Boolean?
+        get() = PropertiesComponent.getInstance(project).getValue(TS_KEY)?.toBooleanStrictOrNull()
+        set(value) {
+            PropertiesComponent.getInstance(project).setValue(TS_KEY, value?.toString())
+            changed()
+        }
+
+    /** Whether web snippets are written in TypeScript. */
+    val typeScript: Boolean get() = pickedTypeScript ?: typeScriptDetected
 
     /** The picked platform, or null to follow [detected]. */
     var picked: CodePlatform?
@@ -44,14 +60,15 @@ class CodePlatforms(private val project: Project) : Disposable {
     fun detect() {
         if (!started.compareAndSet(false, true)) return
         ApplicationManager.getApplication().executeOnPooledThread {
-            val result = try {
-                ReadAction.nonBlocking<List<DetectedPlatform>> { PlatformDetector.detect(buildFiles()) }.expireWith(this).executeSynchronously()
+            val files = try {
+                ReadAction.nonBlocking<Map<String, String>> { buildFiles() }.expireWith(this).executeSynchronously()
             } catch (e: Exception) {
                 if (e is com.intellij.openapi.progress.ProcessCanceledException) throw e
                 LOG.info("Could not read the build files to guess the project's platform", e)
-                emptyList()
+                emptyMap()
             }
-            detected = result
+            detected = PlatformDetector.detect(files)
+            typeScriptDetected = PlatformDetector.usesTypeScript(files)
             detectionDone = true
             ApplicationManager.getApplication().invokeLater({ changed() }, project.disposed)
         }
@@ -88,6 +105,7 @@ class CodePlatforms(private val project: Project) : Disposable {
     companion object {
         private val LOG = logger<CodePlatforms>()
         private const val KEY = "cz.xprees.lottie.code.platform"
+        private const val TS_KEY = "cz.xprees.lottie.code.typescript"
         private const val MAX_FILE = 512 * 1024L
         private const val MAX_FILES = 200
         private val SKIPPED = setOf("node_modules", "build", "dist", "out", "target", "Pods", "DerivedData", "bin", "obj")

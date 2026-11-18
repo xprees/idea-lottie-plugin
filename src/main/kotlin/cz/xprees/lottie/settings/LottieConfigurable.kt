@@ -59,6 +59,11 @@ class LottieConfigurable : BoundSearchableConfigurable(LottieBundle.message("set
             row {
                 checkBox(LottieBundle.message("settings.loop")).bindSelected(state::loop)
             }
+            row {
+                checkBox(LottieBundle.message("settings.pause.inactive"))
+                    .bindSelected(state::pauseWhenInactive)
+                    .comment(LottieBundle.message("settings.pause.inactive.comment"))
+            }
         }
         group(LottieBundle.message("settings.group.editor")) {
             row {
@@ -69,6 +74,9 @@ class LottieConfigurable : BoundSearchableConfigurable(LottieBundle.message("set
             row {
                 checkBox(LottieBundle.message("settings.inlays"))
                     .bindSelected(state::inlayHints)
+            }
+            row {
+                checkBox(LottieBundle.message("settings.v1.banner")).bindSelected(state::dotLottieV1Banner)
             }
             row {
                 checkBox(LottieBundle.message("settings.sync"))
@@ -87,6 +95,8 @@ class LottieConfigurable : BoundSearchableConfigurable(LottieBundle.message("set
             ProjectView.getInstance(project).refresh()
             DaemonCodeAnalyzer.getInstance(project).restart("Lottie settings changed")
         }
+        // the dotLottie 1.0 banner can be turned on and off here
+        com.intellij.ui.EditorNotifications.updateAll()
     }
 }
 
