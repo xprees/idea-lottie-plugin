@@ -21,6 +21,7 @@
 ### Fixed
 
 - Playback keys work while the read-only dotLottie details have the focus
+- No use of deprecated platform API (`ReadAction.compute`), which the JetBrains Marketplace verifier reported
 
 ## [2026.3.3] - 2026-11-17
 
