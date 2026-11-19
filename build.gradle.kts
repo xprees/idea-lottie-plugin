@@ -175,7 +175,7 @@ dependencies {
     intellijPlatform {
         intellijIdea(platformVersion)
         // Lottie .json files stay JSON files: the split editor, schema, structure view, inlays and color swatches build on it
-        bundledPlugins("com.intellij.modules.json")
+        bundledPlugins("com.intellij.modules.json", "com.intellij.mcpServer")
         testFramework(TestFrameworkType.Platform)
         // pinned: see gradle.properties
         pluginVerifier(providers.gradleProperty("pluginVerifierVersion"))

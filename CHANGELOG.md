@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Tools for AI agents connected to the IDE's MCP server (*Settings › Tools › MCP Server*): describe Lottie and dotLottie files
+  (markers, layers, palette, manifest, state machines with their code), check state machines, add and remove markers, add, rename
+  and delete state machine inputs, convert to dotLottie 2.0, extract and pack. Paths stay inside the project, and each edit is one
+  undoable change
+
 ### Changed
 
 - The editor tab of a state machine opened from a `.lottie` file names the archive (`toggle.json · toggle.lottie`); from 2026.3 its

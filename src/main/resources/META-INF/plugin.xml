@@ -14,6 +14,8 @@
     <depends optional="true" config-file="lottie-jcef.xml">com.intellij.modules.jcef</depends>
     <!-- Rider's Solution Explorer has its own popup group instead of ProjectViewPopupMenu -->
     <depends optional="true" config-file="lottie-rider.xml">com.intellij.modules.rider</depends>
+    <!-- Tools for AI agents connected to the IDE's MCP server (Settings | Tools | MCP Server), when that bundled plugin is enabled -->
+    <depends optional="true" config-file="lottie-mcp.xml">com.intellij.mcpServer</depends>
 
     <resource-bundle>messages.LottieBundle</resource-bundle>
 
