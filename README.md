@@ -21,6 +21,9 @@ Support for <b>Lottie</b> animations in IntelliJ IDEA, WebStorm, Rider and other
       them and drives its state machine (inputs with their names and values, custom events), for dotLottie Web, React, Vue,
       Svelte, Solid or Web Component, lottie-web, React Native, Android (View, Compose), iOS or Flutter, guessed from your project's
       build files</li>
+  <li><b>Tools for AI agents</b>: with the IDE's MCP server on, agents such as Claude Code or Cursor can read markers, layers,
+      palettes and state machines of your Lottie and dotLottie files, and add markers, edit state machine inputs, convert to dotLottie
+      2.0, extract and pack, each change undoable</li>
   <li>Playback controls: play/pause, loop, speed, <b>markers</b> (play one segment), zoom, and a checkerboard, light, dark or
       custom background</li>
   <li>The animation's <b>color palette</b> above the preview: click a color to <b>recolor every use at once</b> (fills, strokes,
@@ -74,6 +77,27 @@ count, so a pasted animation becomes Lottie as soon as it looks like one (reopen
 | Code | A *Code* tab (`.lottie` side panel; *Code Snippets* in the toolbar of JSON previews) with code that uses this animation in an app: for the web players a whole component (typed TypeScript, or JavaScript when the project has no `tsconfig.json`; switch next to the platform) that loads the file, keeps the player instance (Vue: `useTemplateRef<DotLottieVueInstance>('player')`), plays each marker by its name and keeps track of the marker playback is in; elsewhere the setup and code that follows the markers where the runtime reports the playback position. Then playing each marker by its name, starting the state machine, setting each input (with its live value while the machine runs) and listening to the custom events the machine sends. The snippets follow edits to markers and inputs. Platforms: dotLottie Web, React, Vue, Svelte, Solid and Web Component, lottie-web, dotLottie React Native, lottie-react-native, dotLottie Android (Compose and View), Lottie Android and Compose (Airbnb), dotLottie iOS, Lottie iOS (Airbnb), dotLottie Flutter and lottie (Flutter); runtimes without state machines get marker code only. The platform is guessed from the project's build files (`package.json`, Gradle files and version catalogs, `Package.swift`/`Package.resolved`/`Podfile`, `pubspec.yaml`): a Lottie dependency first, else the kind of project. A platform picked in the tab overrides the guess for that project. The timeline's marker menu has *Copy Code to Play* for the same platform. *Copy prompt for an AI agent* copies a prompt with the file, the player, the markers with their frames, the state machine with its inputs and custom events and the generated component, for a coding agent to integrate the animation into the project |
 | Optimize | *Optimize Lottie…* (context menu, editor tab menu, preview toolbar) makes Lottie JSON and `.lottie` files smaller. The dialog shows the current size and, live as options change, the size after each step and in total (and for JSON the size as a `.lottie`). **Lossless cleanup**: minified JSON, no editor-only data (match names and property indexes are kept when the animation has expressions), unused assets and archive images, empty groups, keyframes that never change, default values and duplicate images. **Rounding** to 0–5 decimals (keyframe times, colours and easing keep at least 3). **Hidden layers** (opt-in): hidden layers and layers never on screen, keeping parents, track mattes and layers named by expressions, themes or state machines. **Images** (opt-in): scaled down to 1–3× the size they are drawn at and re-encoded as PNG/JPEG, JPEG (opaque images) or WebP; WebP is encoded in the IDE's embedded browser, no native library. **Compare Frames** renders 8 evenly spaced frames of each animation before and after with the preview's player and reports the frame that changed most, side by side; *Optimize in Place* runs it first (can be turned off) and asks before writing when more than 0.5% of a frame's pixels change visibly. *Save as Copy* writes `name.optimized.json` / `.lottie`; *Optimize in Place* is one undoable change (one Ctrl+Z). Markers, slots, layer names and indexes, and the manifest, themes and state machines of a `.lottie` are kept |
 | Actions | *Extract Lottie JSON* (`.lottie` context menu, editor tab menu, preview toolbar): writes the animation next to the archive with its images embedded as data URIs, and opens it. *Pack as dotLottie* (Lottie JSON): creates a dotLottie 2.0 file with the animation and the images it embeds or references next to it (stored under `i/`), and opens it. *Convert to dotLottie 2.0* (dotLottie 1.0 files, also several selected in the Project view at once, the *→ dotLottie 2* link in the preview toolbar, and a banner over their editor that can be closed or turned off): rewrites the file in the 2.0 layout and manifest in place, as one undoable change; 1.0 playback settings and descriptive fields that 2.0 has no place for are listed in a notification. In Rider they are in the Solution Explorer menu |
+
+## Tools for AI agents (MCP)
+
+When the IDE's MCP server is on (*Settings › Tools › MCP Server*), agents connected to it get these tools, so
+you can ask them "which markers does `loader.json` have?", "add a `hovered` input to the toggle state machine" or "convert all
+`.lottie` files in `assets/` to dotLottie 2.0":
+
+| Tool | What it does |
+|------|--------------|
+| `lottie_describe` | Size, frame rate, frames and duration, markers, layers (name, type, in/out, parent), slots and the color palette of a Lottie JSON file or an animation of a `.lottie` file |
+| `dotlottie_describe` | Version, manifest, animations, themes, state machines and the files of a `.lottie` file |
+| `dotlottie_state_machine` | States, transitions, inputs, interactions and custom events of a state machine, its broken references, and the code that drives it for the project's player |
+| `dotlottie_check` | References of state machines that point nowhere (inputs, states, animations, markers, themes, layers) |
+| `lottie_add_marker`, `lottie_remove_marker` | Add or remove a named marker |
+| `dotlottie_add_input`, `dotlottie_rename_input`, `dotlottie_delete_input` | Edit state machine inputs; renaming updates every guard and action |
+| `dotlottie_convert_to_v2` | Convert a dotLottie 1.0 file to 2.0 in place |
+| `lottie_extract`, `lottie_pack` | Write an animation of a `.lottie` file as JSON next to it, or pack a JSON file as `.lottie` |
+
+Paths are relative to the project, and files outside it are refused. Reads include unsaved editor changes. Each edit is one undoable
+change of the file (JSON files are saved, so agents reading them from disk see it); extract and pack only create new files next to
+the original.
 
 ## Markers as events for your code
 
