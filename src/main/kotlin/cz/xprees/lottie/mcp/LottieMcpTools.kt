@@ -33,6 +33,7 @@ import cz.xprees.lottie.statemachine.StateMachineChecker
 import cz.xprees.lottie.statemachine.StateMachineDocuments
 import cz.xprees.lottie.statemachine.StateMachineInput
 import cz.xprees.lottie.statemachine.StateMachineVirtualFile
+import cz.xprees.lottie.preview.FrameRenderRequest
 import java.io.File
 import java.nio.file.Path
 
@@ -427,6 +428,98 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
         }
     }
 
+    // ---- rendering -------------------------------------------------------------------------------------------------------
+
+    /** A frame to render: what the renderer gets, and what the result reports. */
+    class RenderJob(
+        val request: FrameRenderRequest,
+        val file: VirtualFile,
+        val animation: String?,
+        val frame: Double,
+        val marker: String?,
+        val output: String?,
+    )
+
+    /**
+     * Checks a render call and collects what the renderer needs (read access): the frame [frame] (composition frames) or the start
+     * of marker [marker] (default: the in point), the longest side [size], [background] and dotLottie [theme].
+     */
+    fun prepareRender(
+        file: VirtualFile,
+        frame: Double? = null,
+        marker: String? = null,
+        size: Int = DEFAULT_SIZE,
+        background: String? = null,
+        theme: String? = null,
+        animation: String? = null,
+        output: String? = null,
+    ): RenderJob {
+        if (frame != null && marker != null) throw ToolError("Pass either 'frame' or 'marker', not both.")
+        if (size !in 16..MAX_SIZE) throw ToolError("'size' is the longest side in pixels, 16 to $MAX_SIZE.")
+        val color = background?.trim()?.takeUnless { it.isEmpty() || it.equals("transparent", ignoreCase = true) }?.let { b ->
+            val hex = b.removePrefix("#")
+            if (!hex.matches(Regex("[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"))) throw ToolError("'background' is a color like #ffffff or #00000080, or 'transparent'.")
+            "#" + hex.lowercase()
+        }
+        if (output != null && !output.endsWith(".png", ignoreCase = true)) throw ToolError("'output' is a .png path inside the project.")
+        val (id, tree) = animationRoot(file, animation)
+        val info = info(file, tree)
+        if (theme != null) {
+            if (!LottieFiles.isDotLottie(file)) throw ToolError("'theme' only applies to .lottie files.")
+            val themes = archive(file).stateMachineContext().themeIds
+            if (theme !in themes) throw ToolError("No theme '$theme' in '${pathOf(file)}'. Themes: ${themes.joinToString().ifEmpty { "none" }}.")
+        }
+        val at = when {
+            marker != null -> (info.markers.firstOrNull { it.name == marker } ?: info.markers.firstOrNull { it.comment == marker }
+                ?: throw ToolError("No marker '$marker' in '${pathOf(file)}'. Markers: ${info.markers.joinToString { it.name }.ifEmpty { "none" }}.")).start
+            frame != null -> frame
+            else -> info.inPoint
+        }
+        if (!at.isFinite() || at < info.inPoint || at > info.outPoint) {
+            throw ToolError("Frame ${num(at)} is outside the animation's ${num(info.inPoint)}–${num(info.outPoint)}.")
+        }
+        val scale = size / maxOf(info.width, info.height, 1.0)
+        val data = if (LottieFiles.isDotLottie(file)) file.contentsToByteArray() else text(file).toByteArray(Charsets.UTF_8)
+        val request = FrameRenderRequest(
+            data = data,
+            json = !LottieFiles.isDotLottie(file),
+            animationId = id,
+            frames = listOf(at - info.inPoint),
+            width = (info.width * scale).toInt().coerceAtLeast(1),
+            height = (info.height * scale).toInt().coerceAtLeast(1),
+            background = color,
+            themeId = theme,
+        )
+        return RenderJob(request, file, id, at, marker, output?.let(::relativize))
+    }
+
+    /**
+     * Saves a rendered frame: at the job's output path inside the project (a new file, as one undoable command; on the EDT), or in
+     * the system's temporary folder.
+     */
+    fun saveRender(job: RenderJob, png: ByteArray): String {
+        val base = "${job.file.nameWithoutExtension}${job.animation?.let { "-${DotLottieWriter.sanitizeId(it)}" } ?: ""}-${num(job.frame)}"
+        val saved = if (job.output != null) {
+            val dir = job.output.substringBeforeLast('/', "")
+            val directory = (if (dir.isEmpty()) root else root.findFileByRelativePath(dir))?.takeIf { it.isDirectory }
+                ?: throw ToolError("No folder '$dir' in the project for the image.")
+            val name = job.output.substringAfterLast('/')
+            WriteCommandAction.writeCommandAction(project).withName("Render Lottie frame").compute<VirtualFile, Exception> {
+                directory.createChildData(this, LottieFiles.uniqueName(directory, name.substringBeforeLast('.'), "png")).also { it.setBinaryContent(png) }
+            }.let(::pathOf)
+        } else {
+            val folder = File(System.getProperty("java.io.tmpdir"), "lottie-render").apply { mkdirs() }
+            File(folder, "$base.png").apply { writeBytes(png) }.absolutePath
+        }
+        val result = linkedMapOf<String, Any?>("image" to saved, "path" to pathOf(job.file))
+        if (job.animation != null) result["animation"] = job.animation
+        result["frame"] = job.frame
+        if (job.marker != null) result["marker"] = job.marker
+        result["width"] = job.request.width
+        result["height"] = job.request.height
+        return json(result)
+    }
+
     // ---- state machines --------------------------------------------------------------------------------------------------
 
     private fun stateMachineIds(archive: DotLottieArchive): List<String> =
@@ -469,6 +562,8 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
 
     companion object {
         const val DEFAULT_LIMIT = 100
+        const val DEFAULT_SIZE = 512
+        const val MAX_SIZE = 2048
 
         /** The platforms whose code [describeStateMachine] can write, as the tool takes them. */
         val PLATFORMS: List<String> = CodePlatform.entries.filter { it.stateMachines }.map { it.name.lowercase().replace('_', '-') }

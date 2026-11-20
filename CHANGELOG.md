@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- MCP tool `lottie_render_frame`: renders a frame or a marker's first frame of a Lottie JSON or `.lottie` file to a PNG (size,
+  background and dotLottie theme), so an agent can see the animation
+
 ## [2026.3.11] - 2026-11-19
 
 ### Added

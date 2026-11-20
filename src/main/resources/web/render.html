@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Renders single frames for the MCP tool lottie_render_frame. Served by the plugin like the preview: no network access, no inline scripts. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:">
+  <title>Lottie frame render</title>
+</head>
+<body>
+<script type="module" src="render.js"></script>
+</body>
+</html>

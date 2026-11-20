@@ -94,6 +94,7 @@ you can ask them "which markers does `loader.json` have?", "add a `hovered` inpu
 | `dotlottie_add_input`, `dotlottie_rename_input`, `dotlottie_delete_input` | Edit state machine inputs; renaming updates every guard and action |
 | `dotlottie_convert_to_v2` | Convert a dotLottie 1.0 file to 2.0 in place |
 | `lottie_extract`, `lottie_pack` | Write an animation of a `.lottie` file as JSON next to it, or pack a JSON file as `.lottie` |
+| `lottie_render_frame` | Render a frame (or a marker's first frame) to a PNG with the preview's player, at a size, background and dotLottie theme, so the agent can look at it; saved in the temporary folder or at a path in the project. Needs JCEF |
 
 Paths are relative to the project, and files outside it are refused. Reads include unsaved editor changes. Each edit is one undoable
 change of the file (JSON files are saved, so agents reading them from disk see it); extract and pack only create new files next to
