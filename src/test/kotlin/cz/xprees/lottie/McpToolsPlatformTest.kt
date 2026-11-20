@@ -203,13 +203,55 @@ class McpToolsPlatformTest : BasePlatformTestCase() {
         assertThatThrownBy { tools.describeStateMachine(tools.resolve("interactive.lottie"), platform = "lottie-web") }.hasMessageContaining("Platforms:")
     }
 
+    fun `test a render picks the frame and size and saves the image`() {
+        val json = file("sample.json")
+        val first = tools.prepareRender(json)
+        assertThat(first.frame).isEqualTo(0.0)
+        assertThat(first.request.json).isTrue()
+        assertThat(first.request.width to first.request.height).isEqualTo(512 to 512)
+        val outro = tools.prepareRender(json, marker = "outro", size = 100, background = "FFFFFF")
+        assertThat(outro.frame).isEqualTo(30.0)
+        assertThat(outro.request.frames).containsExactly(30.0)
+        assertThat(outro.request.width).isEqualTo(100)
+        assertThat(outro.request.background).isEqualTo("#ffffff")
+
+        val lottie = file("interactive.lottie")
+        val archived = tools.prepareRender(lottie, frame = 12.0)
+        assertThat(archived.request.json).isFalse()
+        assertThat(archived.request.animationId).isEqualTo("sample")
+
+        val png = byteArrayOf(1, 2, 3)
+        val temp = json(tools.saveRender(outro, png))
+        assertThat(java.io.File(temp["image"].str()!!).readBytes()).isEqualTo(png)
+        assertThat(temp["frame"]).isEqualTo(30L)
+        assertThat(temp["marker"]).isEqualTo("outro")
+        val saved = json(tools.saveRender(tools.prepareRender(json, output = "frame.png"), png))
+        assertThat(saved["image"]).isEqualTo("frame.png")
+        assertThat(tools.resolve("frame.png").contentsToByteArray()).isEqualTo(png)
+        assertThat(json(tools.saveRender(tools.prepareRender(json, output = "frame.png"), png))["image"]).isEqualTo("frame-2.png")
+    }
+
+    fun `test bad render calls are refused`() {
+        val json = file("sample.json")
+        file("interactive.lottie")
+        assertThatThrownBy { tools.prepareRender(json, frame = 1.0, marker = "intro") }.hasMessageContaining("either 'frame' or 'marker'")
+        assertThatThrownBy { tools.prepareRender(json, frame = 500.0) }.hasMessageContaining("outside the animation's 0–60")
+        assertThatThrownBy { tools.prepareRender(json, marker = "nope") }.hasMessageContaining("No marker 'nope'")
+        assertThatThrownBy { tools.prepareRender(json, size = 5000) }.hasMessageContaining("16 to 2048")
+        assertThatThrownBy { tools.prepareRender(json, background = "red") }.hasMessageContaining("'background'")
+        assertThatThrownBy { tools.prepareRender(json, theme = "dark") }.hasMessageContaining("only applies to .lottie")
+        assertThatThrownBy { tools.prepareRender(tools.resolve("interactive.lottie"), theme = "dark") }.hasMessageContaining("No theme 'dark'")
+        assertThatThrownBy { tools.prepareRender(json, output = "frame.jpg") }.hasMessageContaining(".png path")
+        assertThatThrownBy { tools.prepareRender(json, output = "../frame.png") }.hasMessageContaining("outside the project")
+    }
+
     fun `test every tool of the toolset is described`() {
         val tools = cz.xprees.lottie.mcp.LottieToolset::class.java.declaredMethods
             .mapNotNull { it.getAnnotation(com.intellij.mcpserver.annotations.McpTool::class.java)?.name }
         assertThat(tools).containsExactlyInAnyOrder(
             "lottie_describe", "dotlottie_describe", "dotlottie_state_machine", "dotlottie_check",
             "lottie_add_marker", "lottie_remove_marker", "dotlottie_add_input", "dotlottie_rename_input", "dotlottie_delete_input",
-            "dotlottie_convert_to_v2", "lottie_extract", "lottie_pack",
+            "dotlottie_convert_to_v2", "lottie_extract", "lottie_pack", "lottie_render_frame",
         )
     }
 }

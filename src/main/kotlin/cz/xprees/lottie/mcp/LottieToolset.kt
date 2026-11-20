@@ -12,6 +12,7 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.vfs.VirtualFile
+import cz.xprees.lottie.preview.FrameRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
@@ -152,6 +153,35 @@ class LottieToolset : McpToolset {
     @McpToolHints(destructiveHint = McpToolHintValue.FALSE, idempotentHint = McpToolHintValue.FALSE, openWorldHint = McpToolHintValue.FALSE)
     suspend fun lottie_pack(@McpDescription(PATH) path: String): String =
         write(path, "Packing $path as dotLottie") { pack(it) }
+
+    @McpTool(name = "lottie_render_frame", title = "Render Lottie frame")
+    @McpDescription(
+        """Renders one frame of a Lottie JSON file or an animation of a .lottie file to a PNG image with the IDE's player, and
+        returns the image's path (open it to look at the frame). Renders the given frame, the start of a marker, or the first
+        frame. Needs the IDE's embedded browser (JCEF). Reads unsaved editor changes.""",
+    )
+    @McpToolHints(readOnlyHint = McpToolHintValue.FALSE, destructiveHint = McpToolHintValue.FALSE, openWorldHint = McpToolHintValue.FALSE)
+    suspend fun lottie_render_frame(
+        @McpDescription(PATH) path: String,
+        @McpDescription("Frame to render, in composition frames like the in/out points and markers (default: the in point)") frame: Double? = null,
+        @McpDescription("Render the start frame of this marker instead") marker: String? = null,
+        @McpDescription("Longest side of the image in pixels, 16 to 2048 (default 512)") size: Int = LottieMcpTools.DEFAULT_SIZE,
+        @McpDescription("Background: a color like #ffffff, or transparent (default)") background: String? = null,
+        @McpDescription("For .lottie files: id of a theme to apply") theme: String? = null,
+        @McpDescription(ANIMATION) animation: String? = null,
+        @McpDescription("Save the PNG at this path inside the project (a new file next to existing ones is kept); default: the system's temporary folder") output: String? = null,
+    ): String = call(path, "Rendering $path") { tools, file ->
+        if (!FrameRenderer.isAvailable()) throw ToolError("Rendering needs the IDE's embedded browser (JCEF), which this IDE runtime doesn't have.")
+        val job = readAction { tools.prepareRender(file, frame, marker, size, background, theme, animation, output) }
+        val png = withContext(Dispatchers.IO) {
+            try {
+                FrameRenderer.render(job.request).single()
+            } catch (e: Exception) {
+                throw ToolError("The frame couldn't be rendered: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+        withContext(Dispatchers.EDT) { tools.saveRender(job, png) }
+    }
 
     // ---- plumbing --------------------------------------------------------------------------------------------------------
 
