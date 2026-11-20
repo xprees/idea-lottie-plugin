@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.11] - 2026-11-19
+
 ### Added
 
 - Tools for AI agents connected to the IDE's MCP server (*Settings › Tools › MCP Server*): describe Lottie and dotLottie files
@@ -138,7 +140,8 @@
 - Works in IntelliJ-based IDEs from 2026.1 on, including IntelliJ IDEA, WebStorm and Rider (actions in the Solution Explorer); the
   preview needs the IDE's embedded browser (JCEF), and without it the editors keep working with a notice
 
-[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.9...HEAD
+[Unreleased]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.11...HEAD
+[2026.3.11]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.9...2026.3.11
 [2026.3.9]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.8...2026.3.9
 [2026.3.8]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.7...2026.3.8
 [2026.3.7]: https://github.com/xprees/idea-lottie-plugin/compare/2026.3.4...2026.3.7
