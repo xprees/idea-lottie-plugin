@@ -95,6 +95,9 @@ you can ask them "which markers does `loader.json` have?", "add a `hovered` inpu
 | `dotlottie_convert_to_v2` | Convert a dotLottie 1.0 file to 2.0 in place |
 | `lottie_extract`, `lottie_pack` | Write an animation of a `.lottie` file as JSON next to it, or pack a JSON file as `.lottie` |
 | `lottie_render_frame` | Render a frame (or a marker's first frame) to a PNG with the preview's player, at a size, background and dotLottie theme, so the agent can look at it; saved in the temporary folder or at a path in the project. Needs JCEF |
+| `lottie_code` | The code that uses the animation in an app, as the *Code* tab writes it: component, markers, state machine, inputs and events, for the project's player or a given one; optionally the integration prompt |
+| `lottie_recolor` | Change every use of a color, as one undoable change; for dotLottie 2.0 files optionally into a theme (created when missing), so agents can add a dark mode or brand variants |
+| `lottie_optimize` | Optimize a file (lossless cleanup, rounding, optional hidden layer removal), saved as a copy or in place (undoable), with the size per step |
 
 Paths are relative to the project, and files outside it are refused. Reads include unsaved editor changes. Each edit is one undoable
 change of the file (JSON files are saved, so agents reading them from disk see it); extract and pack only create new files next to

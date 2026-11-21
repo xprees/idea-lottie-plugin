@@ -48,7 +48,7 @@ class ToolError(message: String) : Exception(message)
  * functions need read access, the edits run on the EDT ([LottieToolset] arranges both); [resolve] runs before either, as it may
  * refresh the file system.
  */
-class LottieMcpTools(private val project: Project, private val root: VirtualFile) {
+class LottieMcpTools(internal val project: Project, internal val root: VirtualFile) {
 
     // ---- files -----------------------------------------------------------------------------------------------------------
 
@@ -66,7 +66,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     }
 
     /** [path] as a normalized path relative to [root], refusing paths that leave it. */
-    private fun relativize(path: String): String {
+    internal fun relativize(path: String): String {
         val unified = path.trim().replace('\\', '/')
         if (unified.isEmpty()) throw ToolError("The path is empty; give the path of a Lottie JSON or .lottie file relative to the project directory.")
         val rootPath = root.path.trimEnd('/')
@@ -92,15 +92,15 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     /** [file]'s path relative to the project directory, as results show it. */
     fun pathOf(file: VirtualFile): String = VfsUtilCore.getRelativePath(file, root) ?: file.path
 
-    private fun requireDotLottie(file: VirtualFile) {
+    internal fun requireDotLottie(file: VirtualFile) {
         if (!LottieFiles.isDotLottie(file)) throw ToolError("'${pathOf(file)}' is not a dotLottie (.lottie) file.")
     }
 
     /** The file's text as the editor has it (unsaved changes included). */
-    private fun text(file: VirtualFile): String =
+    internal fun text(file: VirtualFile): String =
         FileDocumentManager.getInstance().getCachedDocument(file)?.text ?: VfsUtilCore.loadText(file)
 
-    private fun archive(file: VirtualFile): DotLottieArchive {
+    internal fun archive(file: VirtualFile): DotLottieArchive {
         requireDotLottie(file)
         return try {
             DotLottieArchive.read(file.contentsToByteArray())
@@ -110,7 +110,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     }
 
     /** The animation JSON tree of a Lottie JSON file, or of animation [animation] (default: the initial one) of a `.lottie` file. */
-    private fun animationRoot(file: VirtualFile, animation: String?): Pair<String?, Any?> {
+    internal fun animationRoot(file: VirtualFile, animation: String?): Pair<String?, Any?> {
         if (LottieFiles.isDotLottie(file)) {
             val archive = archive(file)
             val ids = archive.manifest.animations.map { it.id }
@@ -128,7 +128,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
         return null to tree
     }
 
-    private fun info(file: VirtualFile, tree: Any?): LottieInfo =
+    internal fun info(file: VirtualFile, tree: Any?): LottieInfo =
         LottieModel.read(tree)?.takeIf { tree.obj()?.containsKey("layers") == true }
             ?: throw ToolError("'${pathOf(file)}' is not a Lottie animation (a JSON object with 'layers', 'fr', 'ip', 'op', 'w' and 'h').")
 
@@ -421,7 +421,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     }
 
     /** Creates a file named [base].[extension] (or `base-2`, ...) next to [file], as one undoable command. */
-    private fun create(file: VirtualFile, base: String, extension: String, command: String, write: (VirtualFile) -> Unit): VirtualFile {
+    internal fun create(file: VirtualFile, base: String, extension: String, command: String, write: (VirtualFile) -> Unit): VirtualFile {
         val directory = file.parent ?: throw ToolError("'${pathOf(file)}' has no folder to write into.")
         return WriteCommandAction.writeCommandAction(project).withName(command).compute<VirtualFile, Exception> {
             directory.createChildData(this, LottieFiles.uniqueName(directory, base, extension)).also(write)
@@ -498,7 +498,8 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
      * the system's temporary folder.
      */
     fun saveRender(job: RenderJob, png: ByteArray): String {
-        val base = "${job.file.nameWithoutExtension}${job.animation?.let { "-${DotLottieWriter.sanitizeId(it)}" } ?: ""}-${num(job.frame)}"
+        val base = "${job.file.nameWithoutExtension}${job.animation?.let { "-${DotLottieWriter.sanitizeId(it)}" } ?: ""}-${num(job.frame)}" +
+            (job.request.themeId?.let { "-$it" } ?: "") + (job.request.background?.let { "-${it.removePrefix("#")}" } ?: "")
         val saved = if (job.output != null) {
             val dir = job.output.substringBeforeLast('/', "")
             val directory = (if (dir.isEmpty()) root else root.findFileByRelativePath(dir))?.takeIf { it.isDirectory }
@@ -515,6 +516,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
         if (job.animation != null) result["animation"] = job.animation
         result["frame"] = job.frame
         if (job.marker != null) result["marker"] = job.marker
+        if (job.request.themeId != null) result["theme"] = job.request.themeId
         result["width"] = job.request.width
         result["height"] = job.request.height
         return json(result)
@@ -526,7 +528,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
         (archive.manifest.stateMachines.map { it.id } + archive.entries.map { it.path }.filter { it.startsWith("s/") && it.endsWith(".json") }
             .map { it.removePrefix("s/").removeSuffix(".json") }).distinct()
 
-    private fun stateMachineId(file: VirtualFile, archive: DotLottieArchive, requested: String?): String {
+    internal fun stateMachineId(file: VirtualFile, archive: DotLottieArchive, requested: String?): String {
         val ids = stateMachineIds(archive)
         if (requested != null) {
             if (requested in ids) return requested
@@ -540,7 +542,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     }
 
     /** The state machine as its open JSON editor has it (unsaved edits included), else as the archive has it. */
-    private fun machine(file: VirtualFile, archive: DotLottieArchive, id: String): StateMachine =
+    internal fun machine(file: VirtualFile, archive: DotLottieArchive, id: String): StateMachine =
         StateMachineDocuments.getInstance(project).document(file, id)?.text?.let(StateMachine::parse) ?: archiveMachine(file, archive, id)
 
     private fun archiveMachine(file: VirtualFile, archive: DotLottieArchive, id: String): StateMachine =
@@ -549,7 +551,7 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
     private fun problems(archive: DotLottieArchive, machine: StateMachine): List<Map<String, String>> =
         StateMachineChecker.check(machine, archive.stateMachineContext()).map { linkedMapOf("at" to jsonPath(it.path), "message" to it.message) }
 
-    private fun codePlatform(name: String?): CodePlatform {
+    internal fun codePlatform(name: String?): CodePlatform {
         if (name == null) {
             val current = cz.xprees.lottie.snippets.CodePlatforms.getInstance(project).current
             return if (current.stateMachines) current else CodePlatform.DOTLOTTIE_WEB
@@ -568,9 +570,9 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
         /** The platforms whose code [describeStateMachine] can write, as the tool takes them. */
         val PLATFORMS: List<String> = CodePlatform.entries.filter { it.stateMachines }.map { it.name.lowercase().replace('_', '-') }
 
-        private fun json(value: Map<String, Any?>): String = MiniJson.write(value, pretty = false)
+        internal fun json(value: Map<String, Any?>): String = MiniJson.write(value, pretty = false)
 
-        private fun marker(m: cz.xprees.lottie.model.LottieMarker) = linkedMapOf<String, Any?>("name" to m.name, "start" to m.start, "duration" to m.duration)
+        internal fun marker(m: cz.xprees.lottie.model.LottieMarker) = linkedMapOf<String, Any?>("name" to m.name, "start" to m.start, "duration" to m.duration)
             .apply { if (m.comment != m.name) put("comment", m.comment) }
 
         private fun input(i: StateMachineInput) = linkedMapOf<String, Any?>("name" to i.name, "type" to i.type.json).apply { if (i.type.hasValue) put("value", i.value) }
@@ -582,6 +584,6 @@ class LottieMcpTools(private val project: Project, private val root: VirtualFile
 
         private fun round(d: Double) = Math.round(d * 1000) / 1000.0
 
-        private fun num(d: Double) = if (d == Math.rint(d)) d.toLong().toString() else d.toString()
+        internal fun num(d: Double) = if (d == Math.rint(d)) d.toLong().toString() else d.toString()
     }
 }

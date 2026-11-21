@@ -183,6 +183,57 @@ class LottieToolset : McpToolset {
         withContext(Dispatchers.EDT) { tools.saveRender(job, png) }
     }
 
+    @McpTool(name = "lottie_code", title = "Code to use a Lottie animation")
+    @McpDescription(
+        """Writes the code that uses a Lottie JSON or .lottie file in an app, as the preview's Code tab does: a component that loads
+        it and gives typed access to the player, playing each marker by name and following the marker playback is in, and for
+        .lottie files starting the state machine, setting each input and listening to its custom events. For the project's player
+        (detected from its build files) or the given one. Use it to integrate an animation into the project.""",
+    )
+    @McpToolHints(readOnlyHint = McpToolHintValue.TRUE, openWorldHint = McpToolHintValue.FALSE)
+    suspend fun lottie_code(
+        @McpDescription(PATH) path: String,
+        @McpDescription(
+            "Player: dotlottie-web, dotlottie-react, dotlottie-vue, dotlottie-svelte, dotlottie-solid, dotlottie-web-component, " +
+                "lottie-web, dotlottie-react-native, react-native, dotlottie-android-compose, dotlottie-android-view, lottie-compose, " +
+                "lottie-android, dotlottie-ios, lottie-ios, dotlottie-flutter, flutter (default: the project's player)",
+        ) platform: String? = null,
+        @McpDescription("For web players: TypeScript (true) or JavaScript (false); default: what the project uses") typeScript: Boolean? = null,
+        @McpDescription("For .lottie files: id of the state machine (default: the only or initial one)") stateMachine: String? = null,
+        @McpDescription("Also return a step-by-step integration prompt with the file's markers, inputs and events") prompt: Boolean = false,
+    ): String = read(path, "Writing code for $path") { codeFor(it, platform, typeScript, stateMachine, prompt) }
+
+    @McpTool(name = "lottie_recolor", title = "Recolor Lottie animation")
+    @McpDescription(
+        """Changes every use of one color of a Lottie JSON or .lottie animation (fills, strokes, gradient stops, keyframes, solid
+        layers, text) to another, as one undoable change; lottie_describe lists the palette. For a dotLottie 2.0 file, pass 'theme'
+        to put the change into a theme instead (created when it doesn't exist, e.g. a dark mode): the colors become slots, the
+        animation keeps its own colors, and players apply the theme by its id.""",
+    )
+    @McpToolHints(destructiveHint = McpToolHintValue.TRUE, openWorldHint = McpToolHintValue.FALSE)
+    suspend fun lottie_recolor(
+        @McpDescription(PATH) path: String,
+        @McpDescription("The palette color to change, like #ff3333") from: String,
+        @McpDescription("The new color, like #1e66f5 (#rrggbbaa for transparency)") to: String,
+        @McpDescription(ANIMATION) animation: String? = null,
+        @McpDescription("For dotLottie 2.0 files: id of the theme to write the change into (created when missing) instead of the animation") theme: String? = null,
+        @McpDescription("Display name of a new theme") themeName: String? = null,
+    ): String = write(path, "Recoloring $path") { recolor(it, from, to, animation, theme, themeName) }
+
+    @McpTool(name = "lottie_optimize", title = "Optimize Lottie file")
+    @McpDescription(
+        """Makes a Lottie JSON or .lottie file smaller: lossless cleanup (editor-only data, unused assets, empty groups, constant
+        keyframes, default values), rounding numbers, and optionally removing hidden layers. Reports the size before and after and
+        per step. Saves 'name.optimized.json/.lottie' next to it, or rewrites the file in place as one undoable change.""",
+    )
+    @McpToolHints(destructiveHint = McpToolHintValue.TRUE, openWorldHint = McpToolHintValue.FALSE)
+    suspend fun lottie_optimize(
+        @McpDescription(PATH) path: String,
+        @McpDescription("Rewrite the file itself instead of saving a copy") inPlace: Boolean = false,
+        @McpDescription("Decimals to round numbers to, 0 to 5 (default 3; keyframe times, colors and easing keep at least 3); -1 keeps numbers") precision: Int = 3,
+        @McpDescription("Also remove hidden layers and layers that are never on screen") removeHiddenLayers: Boolean = false,
+    ): String = write(path, "Optimizing $path") { optimize(it, inPlace, precision.takeIf { p -> p >= 0 }, removeHiddenLayers) }
+
     // ---- plumbing --------------------------------------------------------------------------------------------------------
 
     private suspend fun read(path: String, activity: String, tool: LottieMcpTools.(VirtualFile) -> String): String =
