@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- MCP tool `lottie_render_frame`: renders a frame or a marker's first frame of a Lottie JSON or `.lottie` file to a PNG (size,
+  background and dotLottie theme), so an agent can see the animation
+- MCP tool `lottie_code`: the *Code* tab's integration code (component, markers, state machine) for the project's player or a
+  given one, and optionally the integration prompt
+- MCP tool `lottie_recolor`: changes every use of a color, or with `theme` writes it into a dotLottie theme, which is created when
+  missing (dark mode, brand variants)
+- MCP tool `lottie_optimize`: optimizes a file as a copy or in place, with the size saved per step
+
 ## [2026.3.11] - 2026-11-19
 
 ### Added
